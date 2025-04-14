@@ -1,0 +1,159 @@
+#VARIABLE {log_file} {dikugo_test_log.txt}
+
+#ACTION {^What is your name?$}
+{
+    #ECHO {> Creating/logging in as TestUser}
+    #SEND {TestUser}
+}
+
+#ACTION {^Password:$}
+{
+    #ECHO {> Sending password}
+    #SEND {password}
+}
+
+#ACTION {^Please enter a new password:$}
+{
+    #ECHO {> Creating new password}
+    #SEND {password}
+}
+
+#ACTION {^Please retype password:$}
+{
+    #ECHO {> Confirming password}
+    #SEND {password}
+}
+
+#ACTION {^What is your sex \(M/F\)\?$}
+{
+    #ECHO {> Selecting gender}
+    #SEND {M}
+}
+
+#ACTION {^Select a class:$}
+{
+    #ECHO {> Selecting class}
+    #SEND {1}
+}
+
+#ACTION {^.*\[.*hp.*mana.*mv.*\].*>$}
+{
+    #VARIABLE {prompt_received} {1}
+}
+
+#FUNCTION {log_test}
+{
+    #ECHO {TEST: %1}
+    #LINE {log} {$log_file} {TEST: %1}
+}
+
+#FUNCTION {wait_for_prompt}
+{
+    #VARIABLE {prompt_received} {0}
+    #WAIT {$prompt_received == 1}
+    #DELAY {0.5}
+}
+
+#FUNCTION {test_command}
+{
+    #VARIABLE {prompt_received} {0}
+    #ECHO {> Sending: %1}
+    #LINE {log} {$log_file} {COMMAND: %1}
+    #SEND {%1}
+    #WAIT {$prompt_received == 1}
+    #DELAY {0.5}
+}
+
+#FUNCTION {test_navigation}
+{
+    @log_test{Starting navigation test}
+    
+    @test_command{look}
+    @test_command{north}
+    @test_command{look}
+    @test_command{south}
+    @test_command{east}
+    @test_command{look}
+    @test_command{west}
+    @test_command{south}
+    @test_command{look}
+    @test_command{north}
+    
+    @log_test{Testing goto command to specific rooms}
+    @test_command{goto 3001}
+    @test_command{look}
+    @test_command{goto 3100}
+    @test_command{look}
+    
+    @log_test{Navigation test complete}
+}
+
+#FUNCTION {test_extra_descriptions}
+{
+    @log_test{Starting extra descriptions test}
+    
+    @test_command{goto 3001}
+    @test_command{look}
+    @test_command{look fountain}
+    @test_command{look sign}
+    @test_command{look north}
+    
+    @test_command{goto 3010}
+    @test_command{look}
+    @test_command{look window}
+    @test_command{look wall}
+    
+    @log_test{Extra descriptions test complete}
+}
+
+#FUNCTION {test_object_interaction}
+{
+    @log_test{Starting object interaction test}
+    
+    @test_command{goto 3001}
+    @test_command{look}
+    
+    @log_test{Testing inventory and equipment}
+    @test_command{inventory}
+    @test_command{equipment}
+    
+    @log_test{Testing get/drop commands}
+    @test_command{get fountain}
+    @test_command{get all}
+    @test_command{inventory}
+    @test_command{drop all}
+    
+    @log_test{Testing wear/remove commands}
+    @test_command{get all}
+    @test_command{wear all}
+    @test_command{equipment}
+    @test_command{remove all}
+    @test_command{equipment}
+    
+    @log_test{Object interaction test complete}
+}
+
+#FUNCTION {run_all_tests}
+{
+    #LINE {log} {$log_file} {=== DikuGo Navigation and Feature Test ===}
+    #LINE {log} {$log_file} {Started: #FORMAT {%t} {%Y-%m-%d %H:%M:%S}}
+    
+    #DELAY {2} {@test_navigation}
+    #DELAY {10} {@test_extra_descriptions}
+    #DELAY {20} {@test_object_interaction}
+    
+    #DELAY {30} {
+        #LINE {log} {$log_file} {Completed: #FORMAT {%t} {%Y-%m-%d %H:%M:%S}}
+        #LINE {log} {$log_file} {=== Test Complete ===}
+        #ECHO {All tests completed. Log saved to $log_file}
+        #SEND {quit}
+    }
+}
+
+#EVENT {SESSION CONNECTED}
+{
+    #ECHO {Connected to DikuGo server. Starting tests in 5 seconds...}
+    #DELAY {5} {@run_all_tests}
+}
+
+#ECHO {Script loaded. Connecting to DikuGo server...}

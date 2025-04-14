@@ -1,0 +1,82 @@
+# DikuGo Test Commands
+# Run these commands sequentially to test the implemented features
+
+# Basic navigation test
+look
+north
+look
+south
+east
+look
+west
+south
+look
+north
+
+# Testing goto command to specific rooms
+goto 3001
+look
+goto 3100
+look
+
+# Testing extra descriptions
+goto 3001
+look
+look fountain
+look altar
+look temple
+look north
+look east
+look south
+look west
+
+# Testing room extra descriptions in different areas
+goto 3024
+look
+look desk
+look book
+look books
+
+goto 3046
+look
+look table
+look bar
+look fireplace
+
+goto 3014
+look
+look fountain
+look square
+look market
+
+# Testing object interaction
+goto 3001
+inventory
+equipment
+
+# Testing get/drop commands
+get fountain
+get all
+inventory
+drop all
+
+# Testing wear/remove commands
+get all
+inventory
+wear all
+equipment
+remove sword
+equipment
+wear sword
+equipment
+remove all
+equipment
+drop all
+
+# Testing admin commands
+testexits
+validaterooms
+rstat 3001
+
+# Exit the game
+quit

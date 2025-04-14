@@ -1,0 +1,29 @@
+#SESSION {DikuGoTest} {localhost} {4000}
+#VARIABLE {log_file} {dikugo_tintin_test.txt}
+#ACTION {^What is your name?$} {#SEND {TestUser}}
+#ACTION {^Password:$} {#SEND {password}}
+#ACTION {^Please enter a new password:$} {#SEND {password}}
+#ACTION {^Please retype password:$} {#SEND {password}}
+#ACTION {^What is your sex \(M/F\)\?$} {#SEND {M}}
+#ACTION {^Select a class:$} {#SEND {1}}
+#EVENT {SESSION CONNECTED} {
+    #DELAY {2} {look};
+    #DELAY {3} {north};
+    #DELAY {4} {look};
+    #DELAY {5} {south};
+    #DELAY {6} {east};
+    #DELAY {7} {look};
+    #DELAY {8} {west};
+    #DELAY {9} {goto 3001};
+    #DELAY {10} {look};
+    #DELAY {11} {look fountain};
+    #DELAY {12} {get all};
+    #DELAY {13} {inventory};
+    #DELAY {14} {wear all};
+    #DELAY {15} {equipment};
+    #DELAY {16} {remove all};
+    #DELAY {17} {drop all};
+    #DELAY {18} {testexits};
+    #DELAY {25} {quit}
+}
+#ECHO {Script loaded. Connecting to DikuGo server...}

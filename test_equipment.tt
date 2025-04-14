@@ -1,0 +1,172 @@
+#SESSION DikuGoEquipmentTest localhost 4000
+
+#VARIABLE {log_file} {dikugo_equipment_test.txt}
+
+#ACTION {^What is your name?$}
+{
+    #ECHO {> Creating/logging in as TestUser}
+    #SEND {TestUser}
+}
+
+#ACTION {^Password:$}
+{
+    #ECHO {> Sending password}
+    #SEND {password}
+}
+
+#ACTION {^Please enter a new password:$}
+{
+    #ECHO {> Creating new password}
+    #SEND {password}
+}
+
+#ACTION {^Please retype password:$}
+{
+    #ECHO {> Confirming password}
+    #SEND {password}
+}
+
+#ACTION {^What is your sex \(M/F\)\?$}
+{
+    #ECHO {> Selecting gender}
+    #SEND {M}
+}
+
+#ACTION {^Select a class:$}
+{
+    #ECHO {> Selecting class}
+    #SEND {1}
+}
+
+#ACTION {^.*\[.*hp.*mana.*mv.*\].*>$}
+{
+    #VARIABLE {prompt_received} {1}
+}
+
+#FUNCTION {log_test}
+{
+    #ECHO {TEST: %1}
+    #LINE {log} {$log_file} {TEST: %1}
+}
+
+#FUNCTION {wait_for_prompt}
+{
+    #VARIABLE {prompt_received} {0}
+    #WAIT {$prompt_received == 1}
+    #DELAY {0.5}
+}
+
+#FUNCTION {test_command}
+{
+    #VARIABLE {prompt_received} {0}
+    #ECHO {> Sending: %1}
+    #LINE {log} {$log_file} {COMMAND: %1}
+    #SEND {%1}
+    #WAIT {$prompt_received == 1}
+    #DELAY {0.5}
+}
+
+#FUNCTION {test_basic_equipment}
+{
+    @log_test{Testing basic equipment commands}
+    
+    @test_command{goto 3001}
+    @test_command{look}
+    
+    @log_test{Testing inventory and equipment commands}
+    @test_command{inventory}
+    @test_command{equipment}
+    
+    @log_test{Testing get/drop commands}
+    @test_command{get all}
+    @test_command{inventory}
+    @test_command{drop all}
+    @test_command{inventory}
+}
+
+#FUNCTION {test_wear_remove}
+{
+    @log_test{Testing wear/remove commands}
+    
+    @test_command{goto 3001}
+    @test_command{get all}
+    @test_command{inventory}
+    
+    @log_test{Testing wear all}
+    @test_command{wear all}
+    @test_command{equipment}
+    @test_command{inventory}
+    
+    @log_test{Testing remove individual items}
+    @test_command{remove sword}
+    @test_command{equipment}
+    @test_command{inventory}
+    
+    @log_test{Testing wear individual items}
+    @test_command{wear sword}
+    @test_command{equipment}
+    
+    @log_test{Testing remove all}
+    @test_command{remove all}
+    @test_command{equipment}
+    @test_command{inventory}
+    
+    @test_command{drop all}
+}
+
+#FUNCTION {test_equipment_positions}
+{
+    @log_test{Testing equipment positions}
+    
+    @test_command{goto 3020}  # Armory
+    @test_command{look}
+    @test_command{get all}
+    @test_command{inventory}
+    
+    @log_test{Testing individual wear positions}
+    @test_command{wear shield}
+    @test_command{wear helmet}
+    @test_command{wear breastplate}
+    @test_command{wear leggings}
+    @test_command{wear boots}
+    @test_command{wear gauntlets}
+    @test_command{wear cloak}
+    @test_command{wear belt}
+    @test_command{wear bracers}
+    @test_command{wield sword}
+    @test_command{hold torch}
+    
+    @test_command{equipment}
+    
+    @log_test{Testing position conflicts}
+    @test_command{get dagger}
+    @test_command{wield dagger}
+    
+    @test_command{remove all}
+    @test_command{drop all}
+}
+
+#FUNCTION {run_all_tests}
+{
+    #LINE {log} {$log_file} {=== DikuGo Equipment Test ===}
+    #LINE {log} {$log_file} {Started: #FORMAT {%t} {%Y-%m-%d %H:%M:%S}}
+    
+    #DELAY {2} {@test_basic_equipment}
+    #DELAY {10} {@test_wear_remove}
+    #DELAY {20} {@test_equipment_positions}
+    
+    #DELAY {30} {
+        #LINE {log} {$log_file} {Completed: #FORMAT {%t} {%Y-%m-%d %H:%M:%S}}
+        #LINE {log} {$log_file} {=== Test Complete ===}
+        #ECHO {All tests completed. Log saved to $log_file}
+        #SEND {quit}
+    }
+}
+
+#EVENT {SESSION CONNECTED}
+{
+    #ECHO {Connected to DikuGo server. Starting tests in 5 seconds...}
+    #DELAY {5} {@run_all_tests}
+}
+
+#ECHO {Script loaded. Connecting to DikuGo server...}

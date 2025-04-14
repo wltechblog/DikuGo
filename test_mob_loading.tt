@@ -1,0 +1,104 @@
+#SESSION {DikuGo} {localhost} {4000}
+
+#VARIABLE {log_file} {mob_loading_test.log}
+
+#EVENT {SESSION CONNECTED}
+{
+    #ECHO {Connected to DikuGo server}
+    #LINE {log} {$log_file} {Connected to DikuGo server}
+    
+    #DELAY {1} {
+        #SEND {TestUser}
+        #DELAY {1} {
+            #SEND {password}
+            #DELAY {2} {
+                #SEND {look}
+                #DELAY {1} {
+                    test_mob_loading
+                }
+            }
+        }
+    }
+}
+
+#ACTION {^>$}
+{
+    #VARIABLE {prompt_received} {1}
+}
+
+#FUNCTION {wait_for_prompt}
+{
+    #VARIABLE {prompt_received} {0}
+    #WAIT {$prompt_received == 1}
+    #DELAY {0.5}
+}
+
+#FUNCTION {test_command}
+{
+    #VARIABLE {prompt_received} {0}
+    #ECHO {> Sending: %1}
+    #LINE {log} {$log_file} {COMMAND: %1}
+    #SEND {%1}
+    #WAIT {$prompt_received == 1}
+    #DELAY {0.5}
+}
+
+#FUNCTION {log_test}
+{
+    #ECHO {=== %1 ===}
+    #LINE {log} {$log_file} {=== %1 ===}
+}
+
+#FUNCTION {test_mob_loading}
+{
+    @log_test{Testing mob loading and zone resets}
+    
+    # First, check the current state of a room
+    @test_command{goto 3001}
+    @test_command{look}
+    @test_command{rstat}
+    
+    # Force a zone reset
+    @log_test{Forcing zone reset}
+    @test_command{resetzones}
+    
+    # Check if mobs were loaded
+    @test_command{look}
+    @test_command{rstat}
+    
+    # Try a different room
+    @log_test{Checking another room}
+    @test_command{goto 3014}
+    @test_command{look}
+    @test_command{rstat}
+    
+    # Force another zone reset
+    @log_test{Forcing another zone reset}
+    @test_command{resetzones}
+    
+    # Check if mobs were loaded
+    @test_command{look}
+    @test_command{rstat}
+    
+    # Try to kill a mob if one exists
+    @log_test{Testing mob combat}
+    @test_command{kill mob}
+    
+    # Force another zone reset to see if the mob respawns
+    @log_test{Testing mob respawn after zone reset}
+    @test_command{resetzones}
+    @test_command{look}
+    @test_command{rstat}
+    
+    # Exit the game
+    @log_test{Test complete}
+    @test_command{quit}
+    
+    #SESSION {kill}
+}
+
+#EVENT {SESSION DISCONNECTED}
+{
+    #ECHO {Disconnected from DikuGo server}
+    #LINE {log} {$log_file} {Disconnected from DikuGo server}
+}

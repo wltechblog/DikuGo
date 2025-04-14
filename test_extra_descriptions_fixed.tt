@@ -1,0 +1,148 @@
+#SESSION {DikuGoExtraDescTest} {localhost} {4000}
+
+#VARIABLE {log_file} {dikugo_extradesc_test.txt}
+
+#ACTION {^What is your name?$} {
+    #ECHO {> Creating/logging in as TestUser};
+    #SEND {TestUser}
+}
+
+#ACTION {^Password:$} {
+    #ECHO {> Sending password};
+    #SEND {password}
+}
+
+#ACTION {^Please enter a new password:$} {
+    #ECHO {> Creating new password};
+    #SEND {password}
+}
+
+#ACTION {^Please retype password:$} {
+    #ECHO {> Confirming password};
+    #SEND {password}
+}
+
+#ACTION {^What is your sex \(M/F\)\?$} {
+    #ECHO {> Selecting gender};
+    #SEND {M}
+}
+
+#ACTION {^Select a class:$} {
+    #ECHO {> Selecting class};
+    #SEND {1}
+}
+
+#ACTION {^.*\[.*hp.*mana.*mv.*\].*>$} {
+    #VARIABLE {prompt_received} {1}
+}
+
+#ALIAS {log_test} {
+    #ECHO {TEST: %1};
+    #LINE {log} {$log_file} {TEST: %1}
+}
+
+#ALIAS {wait_for_prompt} {
+    #VARIABLE {prompt_received} {0};
+    #WAIT {$prompt_received == 1};
+    #DELAY {0.5}
+}
+
+#ALIAS {test_command} {
+    #VARIABLE {prompt_received} {0};
+    #ECHO {> Sending: %1};
+    #LINE {log} {$log_file} {COMMAND: %1};
+    #SEND {%1};
+    #WAIT {$prompt_received == 1};
+    #DELAY {0.5}
+}
+
+#ALIAS {test_room_extra_descriptions} {
+    log_test {Testing room extra descriptions in Temple of Midgaard};
+    test_command {goto 3001};
+    test_command {look};
+    test_command {look fountain};
+    test_command {look altar};
+    test_command {look temple};
+    
+    log_test {Testing room extra descriptions in Mage Guild};
+    test_command {goto 3024};
+    test_command {look};
+    test_command {look desk};
+    test_command {look book};
+    test_command {look books};
+    
+    log_test {Testing room extra descriptions in Tavern};
+    test_command {goto 3046};
+    test_command {look};
+    test_command {look table};
+    test_command {look bar};
+    test_command {look fireplace};
+    
+    log_test {Testing room extra descriptions in Market Square};
+    test_command {goto 3014};
+    test_command {look};
+    test_command {look fountain};
+    test_command {look square};
+    test_command {look market};
+    
+    log_test {Testing exit descriptions};
+    test_command {look north};
+    test_command {look east};
+    test_command {look south};
+    test_command {look west}
+}
+
+#ALIAS {test_object_extra_descriptions} {
+    log_test {Testing object extra descriptions};
+    
+    test_command {goto 3001};
+    test_command {get all};
+    test_command {inventory};
+    
+    log_test {Looking at objects in inventory};
+    test_command {look sword};
+    test_command {look shield};
+    test_command {look armor};
+    
+    test_command {wear all};
+    test_command {equipment};
+    
+    log_test {Looking at worn objects};
+    test_command {look sword};
+    test_command {look shield};
+    test_command {look armor};
+    
+    test_command {remove all};
+    test_command {drop all}
+}
+
+#ALIAS {test_admin_commands} {
+    log_test {Testing admin commands};
+    
+    test_command {testexits};
+    test_command {validaterooms};
+    test_command {rstat 3001}
+}
+
+#ALIAS {run_all_tests} {
+    #LINE {log} {$log_file} {=== DikuGo Extra Descriptions Test ===};
+    #LINE {log} {$log_file} {Started: #FORMAT {%t} {%Y-%m-%d %H:%M:%S}};
+    
+    #DELAY {2} {test_room_extra_descriptions};
+    #DELAY {20} {test_object_extra_descriptions};
+    #DELAY {35} {test_admin_commands};
+    
+    #DELAY {45} {
+        #LINE {log} {$log_file} {Completed: #FORMAT {%t} {%Y-%m-%d %H:%M:%S}};
+        #LINE {log} {$log_file} {=== Test Complete ===};
+        #ECHO {All tests completed. Log saved to $log_file};
+        #SEND {quit}
+    }
+}
+
+#EVENT {SESSION CONNECTED} {
+    #ECHO {Connected to DikuGo server. Starting tests in 5 seconds...};
+    #DELAY {5} {run_all_tests}
+}
+
+#ECHO {Script loaded. Connecting to DikuGo server...}
