@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/wltechblog/DikuGo/pkg/command"
 	"github.com/wltechblog/DikuGo/pkg/types"
+	"github.com/wltechblog/DikuGo/pkg/ui"
 	"github.com/wltechblog/DikuGo/pkg/world"
 )
 
@@ -30,7 +32,13 @@ const (
 	StateGetAlignment
 	StateGetStats
 	StateConfirmCharacter
+	StateMainMenu
 	StatePlaying
+	StateReadMOTD
+	StateChangePassword
+	StateConfirmNewPasswordChange
+	StateReadStory
+	StateDeleteCharacter
 	StateDisconnected
 )
 
@@ -72,8 +80,8 @@ func NewClient(conn net.Conn, w *world.World, cmdRegistry *command.Registry) *Cl
 func (c *Client) Handle() {
 	defer c.Close()
 
-	// Send welcome message
-	c.Write("\r\nWelcome to DikuGo!\r\n")
+	// Send welcome banner
+	c.Write(ui.Banner)
 	c.Write("By what name do you wish to be known? ")
 
 	// Main loop
@@ -100,6 +108,20 @@ func (c *Client) Handle() {
 			c.HandleGetNewPassword(input)
 		case StateConfirmNewPassword:
 			c.HandleConfirmNewPassword(input)
+		case StateGetClass:
+			c.HandleGetClass(input)
+		case StateMainMenu:
+			c.HandleMainMenu(input)
+		case StateReadMOTD:
+			c.HandleReadMOTD(input)
+		case StateChangePassword:
+			c.HandleChangePassword(input)
+		case StateConfirmNewPasswordChange:
+			c.HandleConfirmNewPasswordChange(input)
+		case StateReadStory:
+			c.HandleReadStory(input)
+		case StateDeleteCharacter:
+			c.HandleDeleteCharacter(input)
 		case StatePlaying:
 			c.HandleCommand(input)
 		default:
@@ -154,11 +176,32 @@ func (c *Client) Close() {
 		return
 	}
 
+	// Mark as closed first to prevent recursive calls
 	c.Closed = true
+
+	// Unregister client from the client registry
+	if c.Character != nil {
+		log.Printf("Unregistering client for character %s", c.Character.Name)
+		UnregisterClient(c.Character)
+
+		// Save character before disconnecting
+		if c.World != nil {
+			log.Printf("Saving character %s before disconnecting", c.Character.Name)
+			err := c.World.SaveCharacter(c.Character)
+			if err != nil {
+				log.Printf("Error saving character %s during close: %v", c.Character.Name, err)
+			}
+		}
+	}
+
+	// Close the connection
+	log.Printf("Closing connection for client %s", c.ID)
 	err := c.Conn.Close()
 	if err != nil {
 		log.Printf("Error closing connection: %v", err)
 	}
+
+	log.Printf("Client %s closed", c.ID)
 }
 
 // HandleGetName handles the get name state
@@ -201,26 +244,11 @@ func (c *Client) HandleGetPassword(password string) {
 		return
 	}
 
-	// Password is correct, enter game
+	// Password is correct, show menu
 	c.Character = character
-	c.State = StatePlaying
-
-	// World field will be set in AddCharacter
-
-	// Add character to world
-	log.Printf("HandleGetPassword: Adding character %s to world", character.Name)
-	c.World.AddCharacter(character)
-	log.Printf("HandleGetPassword: Character %s added to world, in room: %v", character.Name, character.InRoom)
-
-	// Send welcome message
 	c.Write(fmt.Sprintf("\r\nWelcome back, %s!\r\n", character.Name))
-
-	// Show room description
-	if character.InRoom != nil {
-		c.Write(fmt.Sprintf("\r\n%s\r\n%s\r\n", character.InRoom.Name, character.InRoom.Description))
-	}
-
-	c.Write("Enter your command: ")
+	c.Write(ui.Menu)
+	c.State = StateMainMenu
 }
 
 // HandleConfirmPassword handles the confirm password state
@@ -265,44 +293,211 @@ func (c *Client) HandleConfirmNewPassword(confirm string) {
 		return
 	}
 
-	// Create character
-	character := &types.Character{
-		Name:      name,
-		Password:  password,
-		Level:     1,
-		Position:  types.POS_STANDING,
-		ShortDesc: name,
+	// Store name and password in InputBuf
+	c.InputBuf = fmt.Sprintf("%s:%s", name, password)
+
+	// Prompt for class selection
+	c.Write("\r\nSelect a class:\r\n")
+	c.Write("[1] Magic User - Masters of arcane magic\r\n")
+	c.Write("[2] Cleric - Healers with divine magic\r\n")
+	c.Write("[3] Thief - Stealthy rogues with special skills\r\n")
+	c.Write("[4] Warrior - Strong fighters skilled in combat\r\n")
+	c.Write("\r\nEnter your choice (1-4): ")
+	c.State = StateGetClass
+}
+
+// HandleMainMenu handles the main menu state
+func (c *Client) HandleMainMenu(input string) {
+	switch input {
+	case "0": // Exit
+		c.Write("Goodbye!\r\n")
+		c.Closed = true
+		return
+	case "1": // Enter the game
+		// Register client with the client registry
+		RegisterClient(c.Character, c)
+
+		// Add character to world
+		log.Printf("HandleMainMenu: Adding character %s to world", c.Character.Name)
+		c.World.AddCharacter(c.Character)
+		log.Printf("HandleMainMenu: Character %s added to world, in room: %v", c.Character.Name, c.Character.InRoom)
+
+		// Set the World field in the character
+		c.Character.World = c.World
+
+		// Enter game
+		c.State = StatePlaying
+
+		// Show room description
+		if c.Character.InRoom != nil {
+			c.Write(fmt.Sprintf("\r\n%s\r\n%s\r\n", c.Character.InRoom.Name, c.Character.InRoom.Description))
+		}
+
+		c.Write("Enter your command: ")
+	case "2": // Enter description
+		c.Write("Enter a description for your character. Terminate with a '@'.\r\n")
+		// TODO: Implement description editing
+		c.Write(ui.Menu)
+	case "3": // Read the background story
+		c.Write(ui.Story)
+		c.State = StateReadStory
+	case "4": // Change password
+		c.Write("Enter a new password: ")
+		c.State = StateChangePassword
+	case "5": // Delete character
+		c.Write("\r\nWARNING: This will permanently delete your character!\r\n")
+		c.Write("Type your character's name to confirm deletion: ")
+		c.State = StateDeleteCharacter
+	default:
+		c.Write("Invalid choice.\r\n")
+		c.Write(ui.Menu)
+	}
+}
+
+// HandleReadMOTD handles the read MOTD state
+func (c *Client) HandleReadMOTD(input string) {
+	c.Write(ui.Menu)
+	c.State = StateMainMenu
+}
+
+// HandleReadStory handles the read story state
+func (c *Client) HandleReadStory(input string) {
+	c.Write(ui.Menu)
+	c.State = StateMainMenu
+}
+
+// HandleChangePassword handles the change password state
+func (c *Client) HandleChangePassword(password string) {
+	if len(password) < 5 {
+		c.Write("Password too short. Please choose a password of at least 5 characters: ")
+		return
 	}
 
+	c.InputBuf = password
+	c.Write("Please confirm your new password: ")
+	c.State = StateConfirmNewPasswordChange
+}
+
+// HandleGetClass handles the class selection state
+func (c *Client) HandleGetClass(input string) {
+	// Parse the class choice
+	classChoice, err := strconv.Atoi(input)
+	if err != nil || classChoice < 1 || classChoice > 4 {
+		c.Write("Invalid choice. Please enter a number between 1 and 4: ")
+		return
+	}
+
+	// Get name and password from InputBuf
+	parts := strings.Split(c.InputBuf, ":")
+	name := parts[0]
+	password := parts[1]
+
+	// Create character with the selected class
+	character := &types.Character{
+		Name:          name,
+		Password:      password,
+		Level:         1,
+		Position:      types.POS_STANDING,
+		ShortDesc:     name,
+		Class:         classChoice,
+		Skills:        make(map[int]int),
+		Spells:        make(map[int]int),
+		Equipment:     make([]*types.ObjectInstance, types.NUM_WEARS),
+		Inventory:     make([]*types.ObjectInstance, 0),
+		LastSkillTime: make(map[int]time.Time),
+		LastLogin:     time.Now(),
+		Title:         " the newbie",
+		Prompt:        "%h/%H hp %m/%M mana %v/%V mv> ",
+	}
+
+	// Initialize character abilities and stats based on class
+	character.World = c.World
+
+	// Initialize the character with appropriate stats
+	c.World.InitializeNewCharacter(character)
+
 	// Save character
-	err := c.World.SaveCharacter(character)
+	err = c.World.SaveCharacter(character)
 	if err != nil {
 		c.Write("Error creating character. Please try again: ")
 		c.State = StateGetName
 		return
 	}
 
-	// Enter game
+	// Set character and show menu
 	c.Character = character
-	c.State = StatePlaying
 
-	// Set the World field in the character
-	character.World = c.World
+	// Display character stats
+	c.Write(fmt.Sprintf("\r\nWelcome, %s the %s!\r\n",
+		character.Name, getClassName(classChoice)))
+	c.Write("\r\nYour starting attributes are:\r\n")
+	c.Write(fmt.Sprintf("Strength:     %d\r\n", character.Abilities[0]))
+	c.Write(fmt.Sprintf("Intelligence: %d\r\n", character.Abilities[1]))
+	c.Write(fmt.Sprintf("Wisdom:       %d\r\n", character.Abilities[2]))
+	c.Write(fmt.Sprintf("Dexterity:    %d\r\n", character.Abilities[3]))
+	c.Write(fmt.Sprintf("Constitution: %d\r\n", character.Abilities[4]))
+	c.Write(fmt.Sprintf("Charisma:     %d\r\n", character.Abilities[5]))
+	c.Write("\r\nPress ENTER to continue...\r\n")
 
-	// Add character to world
-	log.Printf("Client: Adding character %s to world", character.Name)
-	c.World.AddCharacter(character)
-	log.Printf("Client: Character %s added to world, in room: %v", character.Name, character.InRoom)
+	c.Write(ui.Menu)
+	c.State = StateMainMenu
+}
 
-	// Send welcome message
-	c.Write(fmt.Sprintf("\r\nWelcome, %s!\r\n", character.Name))
+// getClassName returns the name of a class
+func getClassName(class int) string {
+	return types.GetClassName(class)
+}
 
-	// Show room description
-	if character.InRoom != nil {
-		c.Write(fmt.Sprintf("\r\n%s\r\n%s\r\n", character.InRoom.Name, character.InRoom.Description))
+// HandleDeleteCharacter handles the delete character state
+func (c *Client) HandleDeleteCharacter(input string) {
+	// Check if the input matches the character name
+	if input != c.Character.Name {
+		c.Write("Character name does not match. Deletion cancelled.\r\n")
+		c.Write(ui.Menu)
+		c.State = StateMainMenu
+		return
 	}
 
-	c.Write("Enter your command: ")
+	// Delete the character
+	err := c.World.DeleteCharacter(c.Character.Name)
+	if err != nil {
+		c.Write(fmt.Sprintf("Error deleting character: %s\r\n", err.Error()))
+		c.Write(ui.Menu)
+		c.State = StateMainMenu
+		return
+	}
+
+	// Character deleted successfully
+	c.Write(fmt.Sprintf("Character %s has been permanently deleted.\r\n", c.Character.Name))
+	c.Character = nil
+	c.Write("By what name do you wish to be known? ")
+	c.State = StateGetName
+}
+
+// HandleConfirmNewPasswordChange handles the confirm new password change state
+func (c *Client) HandleConfirmNewPasswordChange(confirm string) {
+	if confirm != c.InputBuf {
+		c.Write("Passwords don't match. Please try again.\r\n")
+		c.Write("Enter a new password: ")
+		c.State = StateChangePassword
+		return
+	}
+
+	// Update password
+	c.Character.Password = confirm
+
+	// Save character
+	err := c.World.SaveCharacter(c.Character)
+	if err != nil {
+		c.Write("Error saving password. Please try again.\r\n")
+		c.Write(ui.Menu)
+		c.State = StateMainMenu
+		return
+	}
+
+	c.Write("Password changed successfully.\r\n")
+	c.Write(ui.Menu)
+	c.State = StateMainMenu
 }
 
 // HandleCommand handles a game command
@@ -317,8 +512,18 @@ func (c *Client) HandleCommand(input string) {
 	if err != nil {
 		// Check if the error is a quit command
 		if strings.HasSuffix(err.Error(), "QUIT") {
-			// Close the connection
-			c.Closed = true
+			// Save character
+			c.World.SaveCharacter(c.Character)
+
+			// Remove character from world
+			c.World.RemoveCharacter(c.Character)
+
+			// Unregister client
+			UnregisterClient(c.Character)
+
+			// Show menu
+			c.Write(ui.Menu)
+			c.State = StateMainMenu
 			return
 		}
 
@@ -326,7 +531,34 @@ func (c *Client) HandleCommand(input string) {
 		c.Write(err.Error() + "\r\n")
 	}
 
-	c.Write("Enter your command: ")
+	// Check if the character has died and needs to return to the menu
+	if c.Character != nil && c.Character.HasMessage("RETURN_TO_MENU") {
+		// Clear the message
+		c.Character.ClearMessage("RETURN_TO_MENU")
+
+		// Save character
+		c.World.SaveCharacter(c.Character)
+
+		// Remove character from world
+		c.World.RemoveCharacter(c.Character)
+
+		// Unregister client
+		UnregisterClient(c.Character)
+
+		// Show menu
+		c.Write(ui.Menu)
+		c.State = StateMainMenu
+		return
+	}
+
+	// Get the formatted prompt
+	if c.CommandRegistry != nil && c.Character != nil {
+		// Use the FormatPrompt function directly
+		prompt := c.CommandRegistry.FormatPrompt(c.Character)
+		c.Write(prompt)
+	} else {
+		c.Write("Enter your command: ")
+	}
 }
 
 // isValidName checks if a name is valid

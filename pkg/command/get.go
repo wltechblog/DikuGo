@@ -39,15 +39,28 @@ func (c *GetCommand) Execute(character *types.Character, args string) error {
 
 	// Find the target object
 	var obj *types.ObjectInstance
+	var containerObj *types.ObjectInstance
+
 	if container != "" {
 		// Get from container
-		containerObj := findObjectInRoom(character.InRoom, container)
+		containerObj = findObjectInRoom(character.InRoom, container)
 		if containerObj == nil {
 			containerObj = findObjectInInventory(character, container)
 		}
 		if containerObj == nil {
 			return fmt.Errorf("you don't see %s here", container)
 		}
+
+		// Check if it's a container
+		if containerObj.Prototype.Type != types.ITEM_CONTAINER {
+			return fmt.Errorf("%s is not a container", containerObj.Prototype.ShortDesc)
+		}
+
+		// Check if the container is closed
+		if containerObj.Prototype.Value[1]&types.CONT_CLOSED != 0 {
+			return fmt.Errorf("%s is closed", containerObj.Prototype.ShortDesc)
+		}
+
 		obj = findObjectInContainer(containerObj, target)
 		if obj == nil {
 			return fmt.Errorf("you don't see %s in %s", target, containerObj.Prototype.ShortDesc)
@@ -99,15 +112,28 @@ func (c *GetCommand) getAll(character *types.Character, container string) error 
 
 	// Get objects from container or room
 	var objects []*types.ObjectInstance
+	var containerObj *types.ObjectInstance
+
 	if container != "" {
 		// Get from container
-		containerObj := findObjectInRoom(character.InRoom, container)
+		containerObj = findObjectInRoom(character.InRoom, container)
 		if containerObj == nil {
 			containerObj = findObjectInInventory(character, container)
 		}
 		if containerObj == nil {
 			return fmt.Errorf("you don't see %s here", container)
 		}
+
+		// Check if it's a container
+		if containerObj.Prototype.Type != types.ITEM_CONTAINER {
+			return fmt.Errorf("%s is not a container", containerObj.Prototype.ShortDesc)
+		}
+
+		// Check if the container is closed
+		if containerObj.Prototype.Value[1]&types.CONT_CLOSED != 0 {
+			return fmt.Errorf("%s is closed", containerObj.Prototype.ShortDesc)
+		}
+
 		objects = containerObj.Contains
 	} else {
 		// Get from room
@@ -233,6 +259,16 @@ func findObjectInInventory(character *types.Character, name string) *types.Objec
 
 // findObjectInContainer finds an object in a container by name
 func findObjectInContainer(container *types.ObjectInstance, name string) *types.ObjectInstance {
+	// Check if the container is a container
+	if container.Prototype.Type != types.ITEM_CONTAINER {
+		return nil
+	}
+
+	// Check if the container is closed
+	if container.Prototype.Value[1]&types.CONT_CLOSED != 0 {
+		return nil
+	}
+
 	// Convert the name to lowercase
 	name = strings.ToLower(name)
 

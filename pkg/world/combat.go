@@ -73,6 +73,9 @@ func (w *World) performCombatRound(ch *types.Character) {
 			}
 
 			log.Printf("%s has been killed by %s!", victim.Name, ch.Name)
+
+			// Handle character death
+			w.HandleCharacterDeath(victim)
 		}
 	}
 }

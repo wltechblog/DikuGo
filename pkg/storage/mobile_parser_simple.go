@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
@@ -10,225 +10,300 @@ import (
 
 // parseSimpleMobile parses a simple mobile (type 'S')
 func parseSimpleMobile(parser *Parser, mobile *types.Mobile) error {
+	log.Printf("Parsing simple mobile #%d", mobile.VNUM)
+	log.Printf("DEBUG: Starting to parse simple mobile #%d with line: %s", mobile.VNUM, parser.Line())
 	// Set default abilities
 	// In the original code, simple mobiles have default ability scores of 11
 	mobile.Abilities = [6]int{11, 11, 11, 11, 11, 11} // STR, INT, WIS, DEX, CON, CHA
 
-	// Parse level
-	if !parser.NextLine() {
-		// Set default values and return
-		setDefaultMobileValues(mobile)
+	// Check if we need to parse the current line or get the next line
+	currentLine := parser.Line()
+	if strings.Contains(currentLine, "S") {
+		// We're already on the flags line, so we need to get the next line
+		if !parser.NextLine() {
+			log.Printf("Warning: unexpected end of file while parsing stats for mobile #%d, using default values", mobile.VNUM)
+			mobile.Level = 1
+			mobile.HitRoll = 0
+			mobile.AC = [3]int{10, 10, 10}
+			mobile.Gold = 10
+			mobile.Experience = 100
+			return nil
+		}
+	}
+
+	// Parse the stats line
+	statsLine := strings.TrimSpace(parser.Line())
+	log.Printf("DEBUG: Parsing stats for mobile #%d, line: '%s'", mobile.VNUM, statsLine)
+
+	// Split the stats line into parts
+	statsParts := strings.Fields(statsLine)
+	if len(statsParts) < 5 {
+		log.Printf("Warning: invalid stats line for mobile #%d: %s, using default values", mobile.VNUM, statsLine)
+		mobile.Level = 1
+		mobile.HitRoll = 0
+		mobile.AC = [3]int{10, 10, 10}
+		mobile.Gold = 10
+		mobile.Experience = 100
 		return nil
 	}
-	levelStr := strings.TrimSpace(parser.Line())
-	level, err := strconv.Atoi(levelStr)
+
+	// Parse level
+	level, err := strconv.Atoi(statsParts[0])
 	if err != nil {
-		// Log warning but continue with default value
-		fmt.Printf("Warning: invalid level on line %d: %v, using default value\n", parser.LineNum(), err)
+		log.Printf("Warning: invalid level for mobile #%d: %v, using default value", mobile.VNUM, err)
 		level = 1
 	}
 	mobile.Level = level
+	log.Printf("Mobile #%d level: %d", mobile.VNUM, level)
 
 	// Parse hitroll (THAC0)
-	if !parser.NextLine() {
-		// Set default values and return
-		setDefaultMobileValues(mobile)
-		return nil
+	if len(statsParts) > 1 {
+		hitroll, err := strconv.Atoi(statsParts[1])
+		if err != nil {
+			log.Printf("Warning: invalid hitroll for mobile #%d: %v, using default value", mobile.VNUM, err)
+			// Use default hitroll based on level
+			hitroll = mobile.Level
+			if hitroll < 0 {
+				hitroll = 0
+			}
+		}
+		// Convert THAC0 to hitroll
+		mobile.HitRoll = 20 - hitroll
+		log.Printf("Mobile #%d hitroll: %d (from THAC0: %d)", mobile.VNUM, mobile.HitRoll, hitroll)
+	} else {
+		// Use a default hitroll based on level
+		if mobile.Level > 3 {
+			mobile.HitRoll = mobile.Level - 3
+		} else {
+			mobile.HitRoll = 1
+		}
 	}
-	hitrollStr := strings.TrimSpace(parser.Line())
-	hitroll, err := strconv.Atoi(hitrollStr)
-	if err != nil {
-		// Log warning but continue with default value
-		fmt.Printf("Warning: invalid hitroll on line %d: %v, using default value\n", parser.LineNum(), err)
-		hitroll = 20
-	}
-	mobile.HitRoll = 20 - hitroll // Convert THAC0 to hitroll
 
 	// Parse armor class
-	if !parser.NextLine() {
-		// Set default values and return
-		setDefaultMobileValues(mobile)
-		return nil
+	if len(statsParts) > 2 {
+		ac, err := strconv.Atoi(statsParts[2])
+		if err != nil {
+			log.Printf("Warning: invalid armor class for mobile #%d: %v, using default value", mobile.VNUM, err)
+			ac = 10 // Default AC value
+		}
+		// Store AC directly for all positions
+		mobile.AC = [3]int{ac, ac, ac} // Same AC for all positions
+		log.Printf("Mobile #%d AC: %d", mobile.VNUM, ac)
+	} else {
+		// Default AC is 10 in the original DikuMUD
+		mobile.AC = [3]int{10, 10, 10}
 	}
-	acStr := strings.TrimSpace(parser.Line())
-	ac, err := strconv.Atoi(acStr)
-	if err != nil {
-		// Log warning but continue with default value
-		fmt.Printf("Warning: invalid armor class on line %d: %v, using default value\n", parser.LineNum(), err)
-		ac = 10
-	}
-	mobile.AC = [3]int{10 * ac, 10 * ac, 10 * ac} // Same AC for all positions
 
-	// Parse hit dice (for max hit points)
-	if !parser.NextLine() {
-		// Set default values and return
-		setDefaultMobileValues(mobile)
-		return nil
-	}
-	hitDiceStr := strings.TrimSpace(parser.Line())
-	hitDiceParts := strings.Split(hitDiceStr, "d")
-	if len(hitDiceParts) != 2 {
-		// Log warning but continue with default values
-		fmt.Printf("Warning: invalid hit dice format on line %d: %s, using default values\n", parser.LineNum(), hitDiceStr)
+	// Parse hit dice and damage dice
+	if len(statsParts) > 3 {
+		// Parse hit dice (for max hit points)
+		hitDiceStr := statsParts[3]
+		hitDiceParts := strings.Split(hitDiceStr, "d")
+		if len(hitDiceParts) != 2 {
+			log.Printf("Warning: invalid hit dice format for mobile #%d: %s, using default values", mobile.VNUM, hitDiceStr)
+			// Default hit dice is 1d6+0
+			mobile.Dice[0] = 1 // Number of dice
+			mobile.Dice[1] = 6 // Size of dice
+			mobile.Dice[2] = 0 // Bonus
+		} else {
+			// Parse number of dice
+			numDice, err := strconv.Atoi(hitDiceParts[0])
+			if err != nil {
+				log.Printf("Warning: invalid number of hit dice for mobile #%d: %v, using default value", mobile.VNUM, err)
+				numDice = 1
+			}
+
+			// Parse size of dice and bonus
+			sizeBonusParts := strings.Split(hitDiceParts[1], "+")
+			sizeDice, err := strconv.Atoi(sizeBonusParts[0])
+			if err != nil {
+				log.Printf("Warning: invalid size of hit dice for mobile #%d: %v, using default value", mobile.VNUM, err)
+				sizeDice = 6
+			}
+
+			var hitBonus int
+			if len(sizeBonusParts) > 1 {
+				hitBonus, err = strconv.Atoi(sizeBonusParts[1])
+				if err != nil {
+					log.Printf("Warning: invalid hit bonus for mobile #%d: %v, using default value", mobile.VNUM, err)
+					hitBonus = 0
+				}
+			}
+
+			// Store the hit dice values exactly as in the original DikuMUD
+			// These will be used to roll actual HP when creating the mob
+			mobile.Dice[0] = numDice  // Number of dice
+			mobile.Dice[1] = sizeDice // Size of dice
+			mobile.Dice[2] = hitBonus // Bonus
+		}
+		log.Printf("Mobile #%d hit dice: %dd%d+%d", mobile.VNUM, mobile.Dice[0], mobile.Dice[1], mobile.Dice[2])
+	} else {
+		// Default hit dice is 1d6+0
 		mobile.Dice[0] = 1 // Number of dice
 		mobile.Dice[1] = 6 // Size of dice
 		mobile.Dice[2] = 0 // Bonus
-	} else {
-		// Parse number of dice
-		numDice, err := strconv.Atoi(hitDiceParts[0])
-		if err != nil {
-			// Log warning but continue with default value
-			fmt.Printf("Warning: invalid number of hit dice on line %d: %v, using default value\n", parser.LineNum(), err)
-			numDice = 1
-		}
-
-		// Parse size of dice and bonus
-		sizeBonusParts := strings.Split(hitDiceParts[1], "+")
-		sizeDice, err := strconv.Atoi(sizeBonusParts[0])
-		if err != nil {
-			// Log warning but continue with default value
-			fmt.Printf("Warning: invalid size of hit dice on line %d: %v, using default value\n", parser.LineNum(), err)
-			sizeDice = 6
-		}
-
-		var hitBonus int
-		if len(sizeBonusParts) > 1 {
-			hitBonus, err = strconv.Atoi(sizeBonusParts[1])
-			if err != nil {
-				// Log warning but continue with default value
-				fmt.Printf("Warning: invalid hit bonus on line %d: %v, using default value\n", parser.LineNum(), err)
-				hitBonus = 0
-			}
-		}
-
-		// Store the hit dice values
-		mobile.Dice[0] = numDice  // Number of dice
-		mobile.Dice[1] = sizeDice // Size of dice
-		mobile.Dice[2] = hitBonus // Bonus
 	}
 
 	// Parse damage dice
-	if !parser.NextLine() {
-		// Set default values and return
-		setDefaultMobileValues(mobile)
-		return nil
-	}
-	damDiceStr := strings.TrimSpace(parser.Line())
-	damDiceParts := strings.Split(damDiceStr, "d")
-	if len(damDiceParts) != 2 {
-		// Log warning but continue with default values
-		fmt.Printf("Warning: invalid damage dice format on line %d: %s, using default values\n", parser.LineNum(), damDiceStr)
+	if len(statsParts) > 4 {
+		damDiceStr := statsParts[4]
+		damDiceParts := strings.Split(damDiceStr, "d")
+		if len(damDiceParts) != 2 {
+			log.Printf("Warning: invalid damage dice format for mobile #%d: %s, using default values", mobile.VNUM, damDiceStr)
+			// Default damage dice is 1d4+0
+			mobile.DamageType = 1
+			mobile.AttackType = 4 // punch
+			mobile.DamRoll = 0
+		} else {
+			// Parse number of dice
+			damNumDice, err := strconv.Atoi(damDiceParts[0])
+			if err != nil {
+				log.Printf("Warning: invalid number of damage dice for mobile #%d: %v, using default value", mobile.VNUM, err)
+				damNumDice = 1
+			}
+			// In the original DikuMUD, this is stored in damnodice
+			mobile.DamageType = damNumDice
+
+			// Parse size of dice and bonus
+			damSizeBonusParts := strings.Split(damDiceParts[1], "+")
+			damSizeDice, err := strconv.Atoi(damSizeBonusParts[0])
+			if err != nil {
+				log.Printf("Warning: invalid size of damage dice for mobile #%d: %v, using default value", mobile.VNUM, err)
+				damSizeDice = 4
+			}
+			// In the original DikuMUD, this is stored in damsizedice
+			mobile.AttackType = damSizeDice
+
+			var damBonus int
+			if len(damSizeBonusParts) > 1 {
+				damBonus, err = strconv.Atoi(damSizeBonusParts[1])
+				if err != nil {
+					log.Printf("Warning: invalid damage bonus for mobile #%d: %v, using default value", mobile.VNUM, err)
+					damBonus = 0
+				}
+			}
+
+			// Set damage roll to the bonus value, exactly as in the original DikuMUD
+			// This is the "strength bonus" that applies to all damage
+			mobile.DamRoll = damBonus
+		}
+		log.Printf("Mobile #%d damage dice: %dd%d+%d", mobile.VNUM, mobile.DamageType, mobile.AttackType, mobile.DamRoll)
+	} else {
+		// Default damage dice is 1d4+0
 		mobile.DamageType = 1
 		mobile.AttackType = 4 // punch
 		mobile.DamRoll = 0
-	} else {
-		// Parse number of dice
-		numDice, err := strconv.Atoi(damDiceParts[0])
-		if err != nil {
-			// Log warning but continue with default value
-			fmt.Printf("Warning: invalid number of damage dice on line %d: %v, using default value\n", parser.LineNum(), err)
-			numDice = 1
-		}
-		mobile.DamageType = numDice
-
-		// Parse size of dice and bonus
-		sizeBonusParts := strings.Split(damDiceParts[1], "+")
-		sizeDice, err := strconv.Atoi(sizeBonusParts[0])
-		if err != nil {
-			// Log warning but continue with default value
-			fmt.Printf("Warning: invalid size of damage dice on line %d: %v, using default value\n", parser.LineNum(), err)
-			sizeDice = 4
-		}
-		mobile.AttackType = sizeDice
-
-		var damBonus int
-		if len(sizeBonusParts) > 1 {
-			damBonus, err = strconv.Atoi(sizeBonusParts[1])
-			if err != nil {
-				// Log warning but continue with default value
-				fmt.Printf("Warning: invalid damage bonus on line %d: %v, using default value\n", parser.LineNum(), err)
-				damBonus = 0
-			}
-		}
-
-		// Set damage roll
-		mobile.DamRoll = damBonus
 	}
+
+	// Get the next line for gold and experience
+	if !parser.NextLine() {
+		log.Printf("Warning: unexpected end of file while parsing gold and experience for mobile #%d, using default values", mobile.VNUM)
+		// Default gold is level * 10
+		mobile.Gold = mobile.Level * 10
+		// Default experience is level * 100
+		mobile.Experience = mobile.Level * 100
+		// Default position is 8 (Standing)
+		mobile.Position = 8
+		// Default default position is 8 (Standing)
+		mobile.DefaultPos = 8
+		// Default sex is 0 (Neutral)
+		mobile.Sex = 0
+		// Set default class to 0 (as in the original code)
+		mobile.Class = 0
+		return nil
+	}
+
+	// Parse gold and experience
+	goldExpLine := strings.TrimSpace(parser.Line())
+	goldExpParts := strings.Fields(goldExpLine)
 
 	// Parse gold
-	if !parser.NextLine() {
-		// Set default values and return
-		setDefaultMobileValues(mobile)
-		return nil
+	if len(goldExpParts) > 0 {
+		gold, err := strconv.Atoi(goldExpParts[0])
+		if err != nil {
+			log.Printf("Warning: invalid gold for mobile #%d: %v, using default value", mobile.VNUM, err)
+			gold = mobile.Level * 10
+		}
+		mobile.Gold = gold
+		log.Printf("Mobile #%d gold: %d", mobile.VNUM, gold)
+	} else {
+		// Default gold is level * 10
+		mobile.Gold = mobile.Level * 10
 	}
-	goldStr := strings.TrimSpace(parser.Line())
-	gold, err := strconv.Atoi(goldStr)
-	if err != nil {
-		// Log warning but continue with default value
-		fmt.Printf("Warning: invalid gold on line %d: %v, using default value\n", parser.LineNum(), err)
-		gold = 0
-	}
-	mobile.Gold = gold
 
 	// Parse experience
+	if len(goldExpParts) > 1 {
+		exp, err := strconv.Atoi(goldExpParts[1])
+		if err != nil {
+			log.Printf("Warning: invalid experience for mobile #%d: %v, using default value", mobile.VNUM, err)
+			exp = mobile.Level * 100
+		}
+		mobile.Experience = exp
+		log.Printf("Mobile #%d experience: %d", mobile.VNUM, exp)
+	} else {
+		// Default experience is level * 100
+		mobile.Experience = mobile.Level * 100
+	}
+
+	// Get the next line for position, default position, and sex
 	if !parser.NextLine() {
-		// Set default values and return
-		setDefaultMobileValues(mobile)
+		log.Printf("Warning: unexpected end of file while parsing position, default position, and sex for mobile #%d, using default values", mobile.VNUM)
+		// Default position is 8 (Standing)
+		mobile.Position = 8
+		// Default default position is 8 (Standing)
+		mobile.DefaultPos = 8
+		// Default sex is 0 (Neutral)
+		mobile.Sex = 0
+		// Set default class to 0 (as in the original code)
+		mobile.Class = 0
 		return nil
 	}
-	expStr := strings.TrimSpace(parser.Line())
-	exp, err := strconv.Atoi(expStr)
-	if err != nil {
-		// Log warning but continue with default value
-		fmt.Printf("Warning: invalid experience on line %d: %v, using default value\n", parser.LineNum(), err)
-		exp = 0
-	}
-	mobile.Experience = exp
+
+	// Parse position, default position, and sex
+	posDefPosSexLine := strings.TrimSpace(parser.Line())
+	posDefPosSexParts := strings.Fields(posDefPosSexLine)
 
 	// Parse position
-	if !parser.NextLine() {
-		// Set default values and return
-		setDefaultMobileValues(mobile)
-		return nil
+	if len(posDefPosSexParts) > 0 {
+		pos, err := strconv.Atoi(posDefPosSexParts[0])
+		if err != nil {
+			log.Printf("Warning: invalid position for mobile #%d: %v, using default value", mobile.VNUM, err)
+			pos = 8 // Standing
+		}
+		mobile.Position = pos
+		log.Printf("Mobile #%d position: %d", mobile.VNUM, pos)
+	} else {
+		// Default position is 8 (Standing)
+		mobile.Position = 8
 	}
-	posStr := strings.TrimSpace(parser.Line())
-	pos, err := strconv.Atoi(posStr)
-	if err != nil {
-		// Log warning but continue with default value
-		fmt.Printf("Warning: invalid position on line %d: %v, using default value\n", parser.LineNum(), err)
-		pos = 8 // Standing
-	}
-	mobile.Position = pos
 
 	// Parse default position
-	if !parser.NextLine() {
-		// Set default values and return
-		setDefaultMobileValues(mobile)
-		return nil
+	if len(posDefPosSexParts) > 1 {
+		defPos, err := strconv.Atoi(posDefPosSexParts[1])
+		if err != nil {
+			log.Printf("Warning: invalid default position for mobile #%d: %v, using default value", mobile.VNUM, err)
+			defPos = 8 // Standing
+		}
+		mobile.DefaultPos = defPos
+		log.Printf("Mobile #%d default position: %d", mobile.VNUM, defPos)
+	} else {
+		// Default default position is 8 (Standing)
+		mobile.DefaultPos = 8
 	}
-	defPosStr := strings.TrimSpace(parser.Line())
-	defPos, err := strconv.Atoi(defPosStr)
-	if err != nil {
-		// Log warning but continue with default value
-		fmt.Printf("Warning: invalid default position on line %d: %v, using default value\n", parser.LineNum(), err)
-		defPos = 8 // Standing
-	}
-	mobile.DefaultPos = defPos
 
 	// Parse sex
-	if !parser.NextLine() {
-		// Set default values and return
-		setDefaultMobileValues(mobile)
-		return nil
+	if len(posDefPosSexParts) > 2 {
+		sex, err := strconv.Atoi(posDefPosSexParts[2])
+		if err != nil {
+			log.Printf("Warning: invalid sex for mobile #%d: %v, using default value", mobile.VNUM, err)
+			sex = 0 // Neutral
+		}
+		mobile.Sex = sex
+		log.Printf("Mobile #%d sex: %d", mobile.VNUM, sex)
+	} else {
+		// Default sex is 0 (Neutral)
+		mobile.Sex = 0
 	}
-	sexStr := strings.TrimSpace(parser.Line())
-	sex, err := strconv.Atoi(sexStr)
-	if err != nil {
-		// Log warning but continue with default value
-		fmt.Printf("Warning: invalid sex on line %d: %v, using default value\n", parser.LineNum(), err)
-		sex = 0 // Neutral
-	}
-	mobile.Sex = sex
 
 	// Set default class to 0 (as in the original code)
 	mobile.Class = 0
@@ -244,39 +319,4 @@ func parseSimpleMobile(parser *Parser, mobile *types.Mobile) error {
 	}
 
 	return nil
-}
-
-// setDefaultMobileValues sets default values for a mobile
-func setDefaultMobileValues(mobile *types.Mobile) {
-	// Set default values for a mobile
-	if mobile.Level == 0 {
-		mobile.Level = 1
-	}
-	if mobile.HitRoll == 0 {
-		mobile.HitRoll = 0
-	}
-	if mobile.AC[0] == 0 && mobile.AC[1] == 0 && mobile.AC[2] == 0 {
-		mobile.AC = [3]int{100, 100, 100}
-	}
-	if mobile.Dice[0] == 0 && mobile.Dice[1] == 0 {
-		mobile.Dice[0] = 1 // Number of dice
-		mobile.Dice[1] = 6 // Size of dice
-		mobile.Dice[2] = 0 // Bonus
-	}
-	if mobile.DamageType == 0 {
-		mobile.DamageType = 1
-	}
-	if mobile.AttackType == 0 {
-		mobile.AttackType = 4 // punch
-	}
-	if mobile.Position == 0 {
-		mobile.Position = 8 // Standing
-	}
-	if mobile.DefaultPos == 0 {
-		mobile.DefaultPos = 8 // Standing
-	}
-	if mobile.Sex == 0 {
-		mobile.Sex = 0 // Neutral
-	}
-	mobile.Class = 0
 }

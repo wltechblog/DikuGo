@@ -195,9 +195,7 @@ func (m *Manager) processAggressiveBehavior(mobile *types.Character) {
 
 	// Acquire read lock for the room before accessing its character list
 	room := mobile.InRoom
-	log.Printf("processAggressiveBehavior: Acquiring RLock for room %d (Mobile: %s)", room.VNUM, mobile.Name)
 	room.RLock()
-	log.Printf("processAggressiveBehavior: Acquired RLock for room %d (Mobile: %s)", room.VNUM, mobile.Name)
 
 	// Find a player to attack
 	var target *types.Character

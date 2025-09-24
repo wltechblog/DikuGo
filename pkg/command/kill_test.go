@@ -21,6 +21,19 @@ func (m *MockCombatManager) StartCombat(attacker, defender *types.Character) err
 	return fmt.Errorf("You hit %s!", defender.ShortDesc)
 }
 
+// StopCombat is a mock implementation that just clears the fighting pointers
+func (m *MockCombatManager) StopCombat(character *types.Character) {
+	if character.Fighting != nil {
+		character.Fighting.Fighting = nil
+		character.Fighting = nil
+	}
+}
+
+// Update is a mock implementation that does nothing
+func (m *MockCombatManager) Update() {
+	// Do nothing in the mock
+}
+
 func TestKillCommand(t *testing.T) {
 	// Create a test room
 	room := &types.Room{

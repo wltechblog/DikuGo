@@ -37,6 +37,17 @@ func (c *RemoveCommand) Execute(character *types.Character, args string) error {
 		return fmt.Errorf("you're not wearing %s", args)
 	}
 
+	// Remove magical effects from the object
+	world := character.World
+	if world != nil {
+		// Try to use the ApplyObjectAffects method if it exists
+		if applier, ok := world.(interface {
+			ApplyObjectAffects(*types.Character, *types.ObjectInstance, bool)
+		}); ok {
+			applier.ApplyObjectAffects(character, obj, false)
+		}
+	}
+
 	// Remove the object from the character's equipment
 	character.Equipment[position] = nil
 
@@ -70,6 +81,17 @@ func (c *RemoveCommand) removeAll(character *types.Character) error {
 	for i, obj := range character.Equipment {
 		if obj == nil {
 			continue
+		}
+
+		// Remove magical effects from the object
+		world := character.World
+		if world != nil {
+			// Try to use the ApplyObjectAffects method if it exists
+			if applier, ok := world.(interface {
+				ApplyObjectAffects(*types.Character, *types.ObjectInstance, bool)
+			}); ok {
+				applier.ApplyObjectAffects(character, obj, false)
+			}
 		}
 
 		// Remove the object from the character's equipment

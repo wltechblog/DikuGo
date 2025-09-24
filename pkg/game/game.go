@@ -82,18 +82,30 @@ func (g *Game) Shutdown() error {
 
 	log.Println("Shutting down game...")
 	g.running = false
+
+	// Signal all goroutines to stop
+	log.Println("Signaling all goroutines to stop...")
 	close(g.shutdownCh)
 
+	// Give goroutines a moment to react to shutdown signal
+	time.Sleep(500 * time.Millisecond)
+
 	// Shutdown the server
+	log.Println("Shutting down network server...")
 	if err := g.server.Shutdown(); err != nil {
-		return err
+		log.Printf("Error shutting down server: %v", err)
+		// Continue with shutdown even if there's an error
 	}
 
 	// Save world state
+	log.Println("Saving world state...")
 	if err := g.world.Save(); err != nil {
-		return err
+		log.Printf("Error saving world state: %v", err)
+		// Continue with shutdown even if there's an error
 	}
 
+	// Final cleanup
+	log.Println("Shutdown complete")
 	return nil
 }
 
@@ -106,11 +118,14 @@ func (g *Game) ValidateRooms() error {
 func (g *Game) gameLoop() {
 	// Define pulse intervals (in milliseconds)
 	const (
-		pulseViolence = 2000  // Combat
-		pulseMobile   = 10000 // Mobile movement and actions
-		pulseZone     = 60000 // Zone resets
-		pulseWeather  = 30000 // Weather changes
-		pulseTime     = 60000 // Game time
+		pulseViolence    = 2000  // Combat
+		pulseMobile      = 10000 // Mobile movement and actions
+		pulseZone        = 60000 // Zone resets
+		pulseWeather     = 30000 // Weather changes
+		pulseTime        = 60000 // Game time
+		pulseCorpses     = 15000 // Corpse decay
+		pulsePointUpdate = 60000 // Character point updates (HP, mana, move)
+		pulseAffect      = 60000 // Affect updates (spell durations)
 	)
 
 	// Create tickers for different pulse types
@@ -119,6 +134,9 @@ func (g *Game) gameLoop() {
 	zoneTicker := time.NewTicker(time.Duration(pulseZone) * time.Millisecond)
 	weatherTicker := time.NewTicker(time.Duration(pulseWeather) * time.Millisecond)
 	timeTicker := time.NewTicker(time.Duration(pulseTime) * time.Millisecond)
+	corpsesTicker := time.NewTicker(time.Duration(pulseCorpses) * time.Millisecond)
+	pointUpdateTicker := time.NewTicker(time.Duration(pulsePointUpdate) * time.Millisecond)
+	affectTicker := time.NewTicker(time.Duration(pulseAffect) * time.Millisecond)
 
 	defer func() {
 		violenceTicker.Stop()
@@ -126,6 +144,9 @@ func (g *Game) gameLoop() {
 		zoneTicker.Stop()
 		weatherTicker.Stop()
 		timeTicker.Stop()
+		corpsesTicker.Stop()
+		pointUpdateTicker.Stop()
+		affectTicker.Stop()
 	}()
 
 	for {
@@ -142,6 +163,12 @@ func (g *Game) gameLoop() {
 			g.world.PulseWeather()
 		case <-timeTicker.C:
 			g.world.PulseTime()
+		case <-corpsesTicker.C:
+			g.world.PulseCorpses()
+		case <-pointUpdateTicker.C:
+			g.world.PulsePointUpdate()
+		case <-affectTicker.C:
+			g.world.PulseAffectUpdate()
 		}
 	}
 }

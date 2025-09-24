@@ -1,0 +1,62 @@
+#SESSION {DikuGo} {localhost} {4000}
+
+#VARIABLE {log_file} {mob_attributes_test.log}
+
+#FUNCTION {log_test}
+{
+    #LINE {log} {$log_file} {TEST: $1}
+    #ECHO {TEST: $1}
+}
+
+#FUNCTION {test_command}
+{
+    #SEND {$1}
+    #LINE {log} {$log_file} {COMMAND: $1}
+}
+
+#FUNCTION {test_mob_attributes}
+{
+    @log_test{Testing mob attributes}
+    
+    # Login as admin
+    @test_command{admin}
+    @test_command{password}
+    
+    # Check cityguard stats
+    @log_test{Checking cityguard stats}
+    @test_command{goto 3001}
+    @test_command{look}
+    @test_command{mobstat cityguard}
+    
+    # Check other mobs
+    @log_test{Checking other mobs}
+    @test_command{goto 3020}
+    @test_command{look}
+    @test_command{mobstat}
+    
+    # Force a zone reset to spawn more mobs
+    @log_test{Forcing zone reset}
+    @test_command{resetzones}
+    
+    # Check mobs after reset
+    @test_command{goto 3001}
+    @test_command{look}
+    @test_command{mobstat cityguard}
+    
+    # Exit the game
+    @log_test{Test complete}
+    @test_command{quit}
+    
+    #SESSION {kill}
+}
+
+#EVENT {SESSION CONNECTED}
+{
+    #DELAY {1} {test_mob_attributes}
+}
+
+#EVENT {SESSION DISCONNECTED}
+{
+    #ECHO {Disconnected from DikuGo server}
+    #LINE {log} {$log_file} {Disconnected from DikuGo server}
+}

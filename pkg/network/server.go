@@ -5,10 +5,12 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/wltechblog/DikuGo/pkg/combat"
 	"github.com/wltechblog/DikuGo/pkg/command"
 	"github.com/wltechblog/DikuGo/pkg/config"
+	"github.com/wltechblog/DikuGo/pkg/types"
 	"github.com/wltechblog/DikuGo/pkg/world"
 )
 
@@ -21,25 +23,38 @@ type Server struct {
 	mutex           sync.RWMutex
 	shutdownCh      chan struct{}
 	commandRegistry *command.Registry
-	combatManager   *combat.Manager
+	combatManager   command.CombatManagerInterface
 }
 
 // NewServer creates a new server instance
 func NewServer(cfg *config.Config, w *world.World) (*Server, error) {
 	// Create combat manager
-	combatManager := combat.NewManager()
+	// Use the EnhancedDikuCombatManager for authentic DikuMUD combat with enhancements
+	combatManager := combat.NewEnhancedDikuCombatManager()
 
 	// Initialize command registry
 	cmdRegistry := command.InitRegistry(w, combatManager)
 
-	return &Server{
+	// Create server
+	server := &Server{
 		config:          cfg,
 		world:           w,
 		clients:         make(map[string]*Client),
 		shutdownCh:      make(chan struct{}),
 		commandRegistry: cmdRegistry,
 		combatManager:   combatManager,
-	}, nil
+	}
+
+	// Set the message handler in the world
+	w.SetMessageHandler(func(ch *types.Character, message string) {
+		// Find the client for this character
+		client := GetClient(ch)
+		if client != nil {
+			client.Write(message)
+		}
+	})
+
+	return server, nil
 }
 
 // Start starts the server
@@ -64,11 +79,15 @@ func (s *Server) Start() error {
 
 // updateCombat updates all combats
 func (s *Server) updateCombat() {
+	// Create a ticker that fires every 2 seconds (same as pulseViolence)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-s.shutdownCh:
 			return
-		default:
+		case <-ticker.C:
 			s.combatManager.Update()
 		}
 	}
@@ -110,21 +129,36 @@ func (s *Server) acceptConnections() {
 
 // Shutdown shuts down the server
 func (s *Server) Shutdown() error {
-	// Close the listener
-	if s.listener != nil {
-		s.listener.Close()
-	}
+	log.Println("Shutting down network server...")
 
 	// Signal all goroutines to stop
-	close(s.shutdownCh)
+	if s.shutdownCh != nil {
+		select {
+		case <-s.shutdownCh:
+			// Channel already closed
+		default:
+			close(s.shutdownCh)
+		}
+	}
+
+	// Close the listener
+	if s.listener != nil {
+		log.Println("Closing network listener...")
+		if err := s.listener.Close(); err != nil {
+			log.Printf("Error closing listener: %v", err)
+		}
+	}
 
 	// Close all client connections
+	log.Printf("Closing %d client connections...", len(s.clients))
 	s.mutex.Lock()
 	for _, client := range s.clients {
 		client.Close()
 	}
+	s.clients = make(map[string]*Client) // Clear the map
 	s.mutex.Unlock()
 
+	log.Println("Network server shutdown complete")
 	return nil
 }
 

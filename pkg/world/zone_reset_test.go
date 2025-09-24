@@ -63,9 +63,9 @@ func TestZoneResetMobLoading(t *testing.T) {
 	// Manually add the room to the world's rooms map
 	world.rooms[room1.VNUM] = room1
 
-	// Verify no mobs in the room initially
-	if len(room1.Characters) > 0 {
-		t.Errorf("Expected no mobs in room initially, got %d", len(room1.Characters))
+	// We expect one mob in the room initially due to the initial zone reset
+	if len(room1.Characters) != 1 {
+		t.Errorf("Expected one mob in room initially due to initial zone reset, got %d", len(room1.Characters))
 	}
 
 	// Set the zone age to trigger a reset
@@ -123,4 +123,103 @@ func TestZoneResetMobLoading(t *testing.T) {
 			t.Errorf("Expected mob to have prototype VNUM 1001, got %v", mob.Prototype)
 		}
 	}
+}
+
+func TestZoneResetEquipment(t *testing.T) {
+	// Create a mock storage
+	storage := NewMockStorage()
+
+	// Create a test mob prototype
+	mobProto := &types.Mobile{
+		VNUM:      7009,
+		Name:      "grand knight paladin",
+		ShortDesc: "the Grand Knight of Paladins",
+		LongDesc:  "The Grand Knight of Paladins is standing here.",
+		Level:     20,
+		ActFlags:  types.ACT_ISNPC,
+	}
+	storage.mobiles = append(storage.mobiles, mobProto)
+
+	// Create a test object prototype
+	objProto := &types.Object{
+		VNUM:        7212,
+		Name:        "sword bastard",
+		ShortDesc:   "a bastard sword",
+		Description: "A bastard sword is lying here.",
+	}
+	storage.objects = append(storage.objects, objProto)
+
+	// Create a test room
+	room := &types.Room{
+		VNUM:        7900,
+		Name:        "Test Room",
+		Description: "This is a test room.",
+		Characters:  make([]*types.Character, 0),
+		Objects:     make([]*types.ObjectInstance, 0),
+	}
+	storage.rooms = append(storage.rooms, room)
+
+	// Create a test zone with commands
+	zone := &types.Zone{
+		VNUM: 79,
+		Name: "Test Zone",
+		Commands: []*types.ZoneCommand{
+			{
+				Command: 'M',
+				Arg1:    mobProto.VNUM,
+				Arg2:    1,
+				Arg3:    room.VNUM,
+			}, // Load mob
+			{
+				Command: 'E',
+				Arg1:    objProto.VNUM,
+				Arg2:    mobProto.VNUM,
+				Arg3:    16,
+			}, // Equip mob with object in position 16 (WIELD)
+		},
+	}
+
+	storage.zones = append(storage.zones, zone)
+	room.Zone = zone
+
+	// Create a world with our mock storage
+	world, err := NewWorld(nil, storage)
+	if err != nil {
+		t.Fatalf("Failed to create world: %v", err)
+	}
+
+	// Manually add the room to the world's rooms map
+	world.rooms[room.VNUM] = room
+
+	// Reset the zone
+	world.resetZone(zone)
+
+	// Find the mob in the room
+	var mob *types.Character
+	for _, ch := range room.Characters {
+		if ch.IsNPC && ch.Prototype != nil && ch.Prototype.VNUM == mobProto.VNUM {
+			mob = ch
+			break
+		}
+	}
+
+	// Check if the mob was loaded
+	if mob == nil {
+		t.Fatalf("Mob was not loaded")
+	}
+
+	// Check if the mob has the equipment
+	if mob.Equipment[16] == nil {
+		t.Fatalf("Mob does not have equipment in position 16")
+	}
+
+	// Check if the equipment is the correct object
+	if mob.Equipment[16].Prototype.VNUM != objProto.VNUM {
+		t.Fatalf("Mob has wrong equipment: expected VNUM %d, got VNUM %d",
+			objProto.VNUM, mob.Equipment[16].Prototype.VNUM)
+	}
+
+	t.Logf("Mob %s (VNUM %d) has equipment %s (VNUM %d) in position %d",
+		mob.Name, mob.Prototype.VNUM, mob.Equipment[16].Prototype.Name,
+		mob.Equipment[16].Prototype.VNUM, 16)
 }

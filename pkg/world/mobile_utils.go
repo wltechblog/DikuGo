@@ -24,3 +24,12 @@ func (w *World) GetMobile(vnum int) *types.Mobile {
 	defer w.mutex.RUnlock()
 	return w.mobiles[vnum]
 }
+
+// AddMobilePrototype adds a mobile prototype to the world
+func (w *World) AddMobilePrototype(mobile *types.Mobile) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	// Add the mobile to the world's mobile prototypes
+	w.mobiles[mobile.VNUM] = mobile
+}

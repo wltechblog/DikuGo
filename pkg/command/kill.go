@@ -10,6 +10,8 @@ import (
 // CombatManagerInterface defines the interface for a combat manager
 type CombatManagerInterface interface {
 	StartCombat(attacker, defender *types.Character) error
+	StopCombat(character *types.Character)
+	Update()
 }
 
 // KillCommand represents the kill command

@@ -33,6 +33,11 @@ func (c *WearCommand) Execute(character *types.Character, args string) error {
 		return fmt.Errorf("you can't wear %s", obj.Prototype.ShortDesc)
 	}
 
+	// Check class restrictions
+	if !canWearItem(character, obj.Prototype) {
+		return fmt.Errorf("you are not the right class to use %s", obj.Prototype.ShortDesc)
+	}
+
 	// Find a position to wear the object
 	position := findWearPosition(obj.Prototype.WearFlags)
 	if position < 0 {
@@ -42,6 +47,13 @@ func (c *WearCommand) Execute(character *types.Character, args string) error {
 	// Check if the character is already wearing something in that position
 	if character.Equipment[position] != nil {
 		return fmt.Errorf("you're already wearing something on your %s", wearPositionName(position))
+	}
+
+	// Check for alignment restrictions
+	if (obj.Prototype.ExtraFlags&types.ITEM_ANTI_EVIL != 0 && character.Alignment < 0) ||
+		(obj.Prototype.ExtraFlags&types.ITEM_ANTI_GOOD != 0 && character.Alignment > 0) ||
+		(obj.Prototype.ExtraFlags&types.ITEM_ANTI_NEUTRAL != 0 && character.Alignment == 0) {
+		return fmt.Errorf("you are zapped by %s and instantly drop it.\r\n", obj.Prototype.ShortDesc)
 	}
 
 	// Remove the object from the character's inventory
@@ -57,6 +69,17 @@ func (c *WearCommand) Execute(character *types.Character, args string) error {
 	obj.WornBy = character
 	obj.WornOn = position
 	character.Equipment[position] = obj
+
+	// Apply magical effects from the object
+	world := character.World
+	if world != nil {
+		// Try to use the ApplyObjectAffects method if it exists
+		if applier, ok := world.(interface {
+			ApplyObjectAffects(*types.Character, *types.ObjectInstance, bool)
+		}); ok {
+			applier.ApplyObjectAffects(character, obj, true)
+		}
+	}
 
 	// Send a message to the character
 	return fmt.Errorf("you wear %s on your %s.\r\n", obj.Prototype.ShortDesc, wearPositionName(position))
@@ -77,6 +100,11 @@ func (c *WearCommand) wearAll(character *types.Character) error {
 			continue
 		}
 
+		// Check class restrictions
+		if !canWearItem(character, obj.Prototype) {
+			continue
+		}
+
 		// Find a position to wear the object
 		position := findWearPosition(obj.Prototype.WearFlags)
 		if position < 0 {
@@ -85,6 +113,14 @@ func (c *WearCommand) wearAll(character *types.Character) error {
 
 		// Check if the character is already wearing something in that position
 		if character.Equipment[position] != nil {
+			continue
+		}
+
+		// Check for alignment restrictions
+		if (obj.Prototype.ExtraFlags&types.ITEM_ANTI_EVIL != 0 && character.Alignment < 0) ||
+			(obj.Prototype.ExtraFlags&types.ITEM_ANTI_GOOD != 0 && character.Alignment > 0) ||
+			(obj.Prototype.ExtraFlags&types.ITEM_ANTI_NEUTRAL != 0 && character.Alignment == 0) {
+			sb.WriteString(fmt.Sprintf("You are zapped by %s and instantly drop it.\r\n", obj.Prototype.ShortDesc))
 			continue
 		}
 
@@ -101,6 +137,17 @@ func (c *WearCommand) wearAll(character *types.Character) error {
 		obj.WornBy = character
 		obj.WornOn = position
 		character.Equipment[position] = obj
+
+		// Apply magical effects from the object
+		world := character.World
+		if world != nil {
+			// Try to use the ApplyObjectAffects method if it exists
+			if applier, ok := world.(interface {
+				ApplyObjectAffects(*types.Character, *types.ObjectInstance, bool)
+			}); ok {
+				applier.ApplyObjectAffects(character, obj, true)
+			}
+		}
 
 		// Add a message to the buffer
 		sb.WriteString(fmt.Sprintf("You wear %s on your %s.\r\n", obj.Prototype.ShortDesc, wearPositionName(position)))
@@ -188,6 +235,17 @@ func findWearPosition(wearFlags uint32) int {
 
 	// No valid position found
 	return -1
+}
+
+// canWearItem checks if a character can wear an item based on class restrictions
+func canWearItem(character *types.Character, obj *types.Object) bool {
+	// If the character is an NPC, they can wear anything
+	if character.IsNPC {
+		return true
+	}
+
+	// Use the CanClassUseItem function from the types package
+	return types.CanClassUseItem(character.Class, obj)
 }
 
 // wearPositionName returns the name of a wear position

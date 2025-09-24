@@ -6,24 +6,26 @@ import (
 
 	"github.com/wltechblog/DikuGo/pkg/config"
 	"github.com/wltechblog/DikuGo/pkg/storage"
-	"github.com/wltechblog/DikuGo/pkg/types"
 	"github.com/wltechblog/DikuGo/pkg/world"
 )
 
 func main() {
 	// Create a new config
-	cfg := &config.Config{
-		DataDir: "old/lib",
-	}
+	cfg := &config.Config{}
+	cfg.Game.DataPath = "old/lib"
+	cfg.Storage.PlayerDir = "old/lib/players"
 
 	// Create a new storage
-	fs := storage.NewFileStorage(cfg)
+	fs, err := storage.NewFileStorage(cfg)
+	if err != nil {
+		log.Fatalf("Error creating file storage: %v", err)
+	}
 
 	// Create a new world
 	w, _ := world.NewWorld(cfg, fs)
 
 	// Load test mobile
-	mobiles, err := storage.ParseMobiles(filepath.Join(cfg.DataDir, "test.mob"))
+	mobiles, err := storage.ParseMobiles(filepath.Join(cfg.Game.DataPath, "test.mob"))
 	if err != nil {
 		log.Fatalf("Error loading mobiles: %v", err)
 	}
@@ -44,21 +46,14 @@ func main() {
 	// Create a character from the mobile prototype
 	if len(mobiles) > 0 {
 		mobile := mobiles[0]
-		character := &types.Character{
-			Name:        mobile.Name,
-			ShortDesc:   mobile.ShortDesc,
-			LongDesc:    mobile.LongDesc,
-			Description: mobile.Description,
-			IsNPC:       true,
-			InRoom:      room,
-			RoomVNUM:    room.VNUM,
-			Prototype:   mobile,
+		// Use the CreateMobFromPrototype function to create a character with all the correct stats
+		character := w.CreateMobFromPrototype(mobile.VNUM, room)
+		if character == nil {
+			log.Fatalf("Failed to create character from prototype")
 		}
 
-		// Add character to room
-		room.Characters = append(room.Characters, character)
-
-		log.Printf("Created character %s in room %d", character.Name, room.VNUM)
+		log.Printf("Created character %s in room %d with stats: Level=%d, HitRoll=%d, DamRoll=%d, AC=%v, Gold=%d, Exp=%d",
+			character.Name, room.VNUM, character.Level, character.HitRoll, character.DamRoll, character.ArmorClass, character.Gold, character.Experience)
 	}
 
 	// Initialize AI

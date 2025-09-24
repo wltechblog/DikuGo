@@ -72,20 +72,26 @@ type Object struct {
 	Weight      int
 	Cost        int
 	ExtraDescs  []*ExtraDescription
-	Affects     []*Affect
+	Affects     [MAX_OBJ_AFFECT]struct {
+		Location int
+		Modifier int
+	}
 }
 
 // ObjectInstance represents an instance of an object in the game
 type ObjectInstance struct {
-	Prototype  *Object
-	InRoom     *Room
-	CarriedBy  *Character
-	WornBy     *Character
-	WornOn     int
-	InObj      *ObjectInstance
-	Contains   []*ObjectInstance
-	Timer      int
-	Affects    []*Affect
+	Prototype *Object
+	InRoom    *Room
+	CarriedBy *Character
+	WornBy    *Character
+	WornOn    int
+	InObj     *ObjectInstance
+	Contains  []*ObjectInstance
+	Timer     int
+	Affects   [MAX_OBJ_AFFECT]struct {
+		Location int
+		Modifier int
+	}
 	CustomDesc string
 	ExtraDescs []*ExtraDescription // Instance-specific extra descriptions
 	mutex      sync.RWMutex
@@ -150,7 +156,6 @@ type Character struct {
 	Experience    int
 	Alignment     int
 	HP            int // Current hit points
-	HitPoints     int // Deprecated, use HP instead
 	MaxHitPoints  int
 	ManaPoints    int
 	MaxManaPoints int
@@ -159,15 +164,19 @@ type Character struct {
 	ArmorClass    [3]int
 	HitRoll       int
 	DamRoll       int
-	Abilities     [6]int // STR, INT, WIS, DEX, CON, CHA
-	Affects       []*Affect
-	Skills        map[int]int
+	Abilities     [6]int      // STR, INT, WIS, DEX, CON, CHA
+	AffectedBy    int64       // Bitvector of affects
+	Affected      *Affect     // Linked list of affects
+	SavingThrow   [5]int      // Saving throws
+	Conditions    [3]int      // Hunger, thirst, drunk
+	Skills        map[int]int // Skill ID -> Skill level (percentage)
 	Spells        map[int]int
 	Equipment     []*ObjectInstance
 	Inventory     []*ObjectInstance
 	InRoom        *Room
 	RoomVNUM      int // VNUM of the room the character is in
 	Fighting      *Character
+	LastSkillTime map[int]time.Time // Last time a skill was used
 	Following     *Character
 	Followers     []*Character
 	IsNPC         bool
@@ -179,7 +188,9 @@ type Character struct {
 	Title         string
 	Prompt        string
 	Flags         uint32
+	Messages      []string    // Special messages for the character
 	World         interface{} // Reference to the world
+	Client        interface{} // Reference to the client
 	mutex         sync.RWMutex
 }
 
@@ -190,9 +201,66 @@ func (c *Character) IsNPCFlag() bool {
 
 // SendMessage sends a message to the character
 func (c *Character) SendMessage(message string) {
-	// TODO: Implement message sending
-	// For now, just log the message
+	// Check if this is a special message that should be stored
+	if message == "RETURN_TO_MENU" {
+		// Initialize Messages slice if needed
+		if c.Messages == nil {
+			c.Messages = make([]string, 0)
+		}
+
+		// Add the message to the character's messages
+		c.Messages = append(c.Messages, message)
+		return
+	}
+
+	// Use the World interface to send the message
+	if c.World != nil {
+		// Try to use the SendMessageToCharacter method if it exists
+		if sender, ok := c.World.(interface {
+			SendMessageToCharacter(*Character, string)
+		}); ok {
+			sender.SendMessageToCharacter(c, message)
+			return
+		}
+	}
+
+	// Fallback to logging the message
 	// log.Printf("Message to %s: %s", c.Name, message)
+}
+
+// HasMessage checks if the character has a specific message
+func (c *Character) HasMessage(message string) bool {
+	// Check if Messages is initialized
+	if c.Messages == nil {
+		return false
+	}
+
+	// Check if the message exists
+	for _, msg := range c.Messages {
+		if msg == message {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ClearMessage removes a specific message from the character's messages
+func (c *Character) ClearMessage(message string) {
+	// Check if Messages is initialized
+	if c.Messages == nil {
+		return
+	}
+
+	// Remove the message
+	newMessages := make([]string, 0, len(c.Messages))
+	for _, msg := range c.Messages {
+		if msg != message {
+			newMessages = append(newMessages, msg)
+		}
+	}
+
+	c.Messages = newMessages
 }
 
 // Zone represents a zone in the game world
@@ -239,21 +307,50 @@ type Shop struct {
 	CloseHour  int
 	Messages   []string                        // Shop messages
 	Functions  []func(*Character, string) bool // Special procedures
+	World      interface{}                     // Reference to the world
 	mutex      sync.RWMutex
 }
 
 // Affect represents a temporary effect on a character or object
 type Affect struct {
-	Type      int
-	Duration  int
-	Modifier  int
-	Location  int
-	BitVector uint32
+	Type      int     // Type of spell/skill that caused this
+	Duration  int     // How long its effects will last
+	Modifier  int     // This is added to appropriate ability
+	Location  int     // Which ability to change (APPLY_XXX)
+	Bitvector int64   // Which bits to set (AFF_XXX)
+	Next      *Affect // Next affect in the list
 }
+
+// Sunlight constants
+const (
+	SUN_DARK  = 0
+	SUN_RISE  = 1
+	SUN_LIGHT = 2
+	SUN_SET   = 3
+)
+
+// Weather constants
+const (
+	SKY_CLOUDLESS = 0
+	SKY_CLOUDY    = 1
+	SKY_RAINY     = 2
+	SKY_LIGHTNING = 3
+)
+
+// Time constants
+const (
+	SECS_PER_MUD_HOUR  = 75
+	SECS_PER_MUD_DAY   = 24 * SECS_PER_MUD_HOUR
+	SECS_PER_MUD_MONTH = 35 * SECS_PER_MUD_DAY
+	SECS_PER_MUD_YEAR  = 17 * SECS_PER_MUD_MONTH
+	DAYS_PER_WEEK      = 7
+	DAYS_PER_MONTH     = 35
+	MONTHS_PER_YEAR    = 17
+)
 
 // TimeWeather represents the game time and weather
 type TimeWeather struct {
-	Hour     int
+	Hours    int
 	Day      int
 	Month    int
 	Year     int

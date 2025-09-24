@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/wltechblog/DikuGo/pkg/types"
@@ -37,18 +38,30 @@ func (c *ListCommand) LogCommand() bool {
 
 // Execute executes the list command
 func (c *ListCommand) Execute(ch *types.Character, args string) error {
+	// Check if the character is in a room
+	if ch.InRoom == nil {
+		return fmt.Errorf("You are not in a room.")
+	}
+
 	// Check if the character is in a shop
 	shop := ch.InRoom.Shop
 	if shop == nil {
 		return fmt.Errorf("You are not in a shop.")
 	}
 
+	// Debug information
+	log.Printf("Shop command: Room %d has shop %d with MobileVNUM %d", ch.InRoom.VNUM, shop.VNUM, shop.MobileVNUM)
+
 	// Find the shopkeeper
 	var keeper *types.Character
 	for _, mob := range ch.InRoom.Characters {
-		if mob.IsNPC && mob.Prototype != nil && mob.Prototype.VNUM == shop.MobileVNUM {
-			keeper = mob
-			break
+		if mob.IsNPC && mob.Prototype != nil {
+			log.Printf("Shop command: Found NPC %s (VNUM %d) in room", mob.Name, mob.Prototype.VNUM)
+			if mob.Prototype.VNUM == shop.MobileVNUM {
+				keeper = mob
+				log.Printf("Shop command: Found shopkeeper %s (VNUM %d)", mob.Name, mob.Prototype.VNUM)
+				break
+			}
 		}
 	}
 
@@ -75,7 +88,26 @@ func (c *ListCommand) Execute(ch *types.Character, args string) error {
 
 // isShopOpen checks if the shop is open
 func isShopOpen(shop *types.Shop) bool {
-	// TODO: Implement time-based shop hours
+	// If no specific hours are set, shop is always open
+	if shop.OpenHour == 0 && shop.CloseHour == 0 {
+		return true
+	}
+
+	// Get the world from the shop
+	if shop.World == nil {
+		// If the shop has no world reference, assume it's open
+		return true
+	}
+
+	// Try to use the IsShopOpen method if it exists
+	if world, ok := shop.World.(interface {
+		IsShopOpen(*types.Shop) bool
+	}); ok {
+		// Check if the shop is open based on the current time
+		return world.IsShopOpen(shop)
+	}
+
+	// Default to open if we can't check the time
 	return true
 }
 
@@ -110,7 +142,7 @@ func listAllItems(ch *types.Character, shop *types.Shop, keeper *types.Character
 		}
 
 		// Calculate the price
-		price := int(float64(obj.Cost) * shop.ProfitSell)
+		price := int(float64(obj.Cost) * shop.ProfitBuy)
 
 		// Add the item to the list
 		itemList.WriteString(fmt.Sprintf("%-40s %d gold\n\r", obj.ShortDesc, price))
@@ -158,7 +190,7 @@ func listSpecificItem(ch *types.Character, shop *types.Shop, keeper *types.Chara
 	}
 
 	// Calculate the price
-	price := int(float64(foundObj.Cost) * shop.ProfitSell)
+	price := int(float64(foundObj.Cost) * shop.ProfitBuy)
 
 	// Send the item info to the character
 	return fmt.Errorf("%s costs %d gold.\n\r", foundObj.ShortDesc, price)

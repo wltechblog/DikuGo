@@ -38,11 +38,8 @@ func (w *World) FindObjectsInRoom(room *types.Room) []*types.ObjectInstance {
 	}
 
 	// Acquire read lock for the room before accessing its objects
-	log.Printf("FindObjectsInRoom: Acquiring RLock for room %d", room.VNUM)
 	room.RLock()
-	log.Printf("FindObjectsInRoom: Acquired RLock for room %d", room.VNUM)
 	defer func() {
-		log.Printf("FindObjectsInRoom: Releasing RLock for room %d", room.VNUM)
 		room.RUnlock()
 	}()
 

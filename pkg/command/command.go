@@ -1,6 +1,8 @@
 package command
 
 import (
+	"errors"
+
 	"github.com/wltechblog/DikuGo/pkg/types"
 )
 
@@ -69,7 +71,25 @@ func (r *Registry) Execute(character *types.Character, input string) error {
 
 	// Check if the character meets the minimum position requirement
 	if character.Position < cmd.MinPosition() {
-		return ErrWrongPosition
+		// Return a more specific error message based on the character's position
+		switch character.Position {
+		case types.POS_DEAD:
+			return errors.New("Lie still; you are DEAD!!!")
+		case types.POS_MORTALLY, types.POS_INCAP:
+			return errors.New("You are in a pretty bad shape, unable to do anything!")
+		case types.POS_STUNNED:
+			return errors.New("You are too stunned to do that!")
+		case types.POS_SLEEPING:
+			return errors.New("You can't do that while sleeping!")
+		case types.POS_RESTING:
+			return errors.New("You can't do that while resting!")
+		case types.POS_SITTING:
+			return errors.New("You can't do that while sitting!")
+		case types.POS_FIGHTING:
+			return errors.New("You can't do that while fighting!")
+		default:
+			return errors.New("You are in the wrong position for that!")
+		}
 	}
 
 	// Check if the character meets the minimum level requirement
@@ -92,4 +112,9 @@ func parseCommand(input string) (string, string) {
 
 	// No space found, the whole input is the command name
 	return input, ""
+}
+
+// FormatPrompt formats a character's prompt
+func (r *Registry) FormatPrompt(ch *types.Character) string {
+	return FormatPrompt(ch)
 }

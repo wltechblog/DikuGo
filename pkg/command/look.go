@@ -102,6 +102,13 @@ func (c *LookCommand) lookAtTarget(character *types.Character, target string) er
 		return c.lookInDirection(character, dir)
 	}
 
+	// Check if the target is "in" something (looking inside a container)
+	parts := strings.SplitN(target, " in ", 2)
+	if len(parts) == 2 && parts[0] == "" {
+		// Looking inside a container
+		return c.lookInContainer(character, parts[1])
+	}
+
 	// Check if the target is a character in the room
 	for _, ch := range room.Characters {
 		if ch != character && strings.Contains(strings.ToLower(ch.Name), strings.ToLower(target)) {
@@ -182,6 +189,61 @@ func (c *LookCommand) lookInDirection(character *types.Character, dir int) error
 
 	// Otherwise, show a default message
 	return fmt.Errorf("you see nothing special in that direction\r\n")
+}
+
+// lookInContainer looks inside a container
+func (c *LookCommand) lookInContainer(character *types.Character, containerName string) error {
+	// Check if the character is in a room
+	if character.InRoom == nil {
+		return fmt.Errorf("you are not in a room")
+	}
+
+	// Find the container
+	var containerObj *types.ObjectInstance
+
+	// First check inventory
+	containerObj = findObjectInInventory(character, containerName)
+	if containerObj == nil {
+		// Then check room
+		containerObj = findObjectInRoom(character.InRoom, containerName)
+	}
+	if containerObj == nil {
+		// Then check equipment
+		for _, item := range character.Equipment {
+			if item != nil && strings.Contains(strings.ToLower(item.Prototype.Name), strings.ToLower(containerName)) {
+				containerObj = item
+				break
+			}
+		}
+	}
+
+	if containerObj == nil {
+		return fmt.Errorf("you don't see %s here", containerName)
+	}
+
+	// Check if it's a container
+	if containerObj.Prototype.Type != types.ITEM_CONTAINER {
+		return fmt.Errorf("%s is not a container", containerObj.Prototype.ShortDesc)
+	}
+
+	// Check if the container is closed
+	if containerObj.Prototype.Value[1]&types.CONT_CLOSED != 0 {
+		return fmt.Errorf("%s is closed", containerObj.Prototype.ShortDesc)
+	}
+
+	// Show the contents
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("You look inside %s:\r\n", containerObj.Prototype.ShortDesc))
+
+	if len(containerObj.Contains) == 0 {
+		sb.WriteString("It is empty.\r\n")
+	} else {
+		for _, item := range containerObj.Contains {
+			sb.WriteString(fmt.Sprintf("  %s\r\n", item.Prototype.ShortDesc))
+		}
+	}
+
+	return fmt.Errorf("%s", sb.String())
 }
 
 // lookAtCharacter looks at a character

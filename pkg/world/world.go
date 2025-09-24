@@ -3,12 +3,15 @@ package world
 import (
 	"fmt"
 	"log"
+	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/wltechblog/DikuGo/pkg/ai"
 	"github.com/wltechblog/DikuGo/pkg/config"
 	"github.com/wltechblog/DikuGo/pkg/types"
+	"github.com/wltechblog/DikuGo/pkg/utils"
 )
 
 // Storage interface for world data
@@ -20,26 +23,31 @@ type Storage interface {
 	LoadShops() ([]*types.Shop, error)
 	SaveCharacter(character *types.Character) error
 	LoadCharacter(name string) (*types.Character, error)
+	DeleteCharacter(name string) error
 	CharacterExists(name string) bool
 }
 
 // TimeWeather represents the time and weather in the game world
 type TimeWeather struct {
-	Hour    int
-	Day     int
-	Month   int
-	Year    int
-	Weather int
+	Hours    int
+	Day      int
+	Month    int
+	Year     int
+	Sunlight int
+	Weather  int
+	Change   int
 }
 
 // NewTimeWeather creates a new time and weather instance
 func NewTimeWeather() *TimeWeather {
 	return &TimeWeather{
-		Hour:    0,
-		Day:     1,
-		Month:   1,
-		Year:    1,
-		Weather: 0,
+		Hours:    0,
+		Day:      0,
+		Month:    0,
+		Year:     1,
+		Sunlight: types.SUN_DARK,
+		Weather:  types.SKY_CLOUDLESS,
+		Change:   0,
 	}
 }
 
@@ -62,6 +70,10 @@ type World struct {
 	running     bool
 	mobRespawns []*types.MobRespawn // Mobs scheduled for respawning
 	aiManager   *ai.Manager         // AI manager
+	rand        *rand.Rand          // Random number generator
+
+	// Message handler
+	messageHandler func(*types.Character, string) // Function to handle messages to characters
 }
 
 // NewWorld creates a new world instance
@@ -76,12 +88,28 @@ func NewWorld(cfg *config.Config, store Storage) (*World, error) {
 		shops:      make(map[int]*types.Shop),
 		characters: make(map[string]*types.Character),
 		time:       NewTimeWeather(),
+		rand:       rand.New(rand.NewSource(time.Now().UnixNano())),
+		messageHandler: func(ch *types.Character, message string) {
+			// Default message handler - just log the message
+			// log.Printf("Message to %s: %s", ch.Name, message)
+		},
 	}
 
 	// Load world data
 	if err := w.loadWorld(); err != nil {
 		return nil, err
 	}
+
+	// Perform initial zone reset to spawn mobs
+	log.Println("Performing initial zone reset...")
+	// Force all zones to reset by setting their age to their lifespan
+	for _, zone := range w.zones {
+		zone.Age = zone.Lifespan
+	}
+	w.ResetZones()
+
+	// Initialize the time system
+	w.InitializeTime()
 
 	// Initialize the AI system
 	w.InitAI()
@@ -133,34 +161,106 @@ func (w *World) loadWorld() error {
 	}
 	log.Printf("Loaded %d zones", len(w.zones))
 
+	// Process zone commands to set up default equipment for mob prototypes
+	w.ProcessZoneCommands()
+
 	// Load shops
 	shops, err := w.storage.LoadShops()
 	if err != nil {
 		return fmt.Errorf("failed to load shops: %w", err)
 	}
+
+	// Debug: Print all loaded shops
+	log.Printf("Loaded %d shops from storage", len(shops))
+
+	// First, clear any existing shops
+	w.shops = make(map[int]*types.Shop)
+
+	// Then, for each room, clear any shop references
+	for _, room := range w.rooms {
+		room.Shop = nil
+	}
+
+	// Now process each shop
 	for _, shop := range shops {
-		w.shops[shop.VNUM] = shop
+		log.Printf("Processing shop #%d: Room VNUM = %d, Keeper VNUM = %d, Items: %v",
+			shop.VNUM, shop.RoomVNUM, shop.MobileVNUM, shop.Producing)
+
+		// Create a deep copy of the shop
+		shopCopy := &types.Shop{
+			VNUM:       shop.VNUM,
+			RoomVNUM:   shop.RoomVNUM,
+			MobileVNUM: shop.MobileVNUM,
+			ProfitBuy:  shop.ProfitBuy,
+			ProfitSell: shop.ProfitSell,
+			OpenHour:   shop.OpenHour,
+			CloseHour:  shop.CloseHour,
+		}
+
+		// Deep copy the slices
+		shopCopy.Producing = make([]int, len(shop.Producing))
+		copy(shopCopy.Producing, shop.Producing)
+
+		shopCopy.BuyTypes = make([]int, len(shop.BuyTypes))
+		copy(shopCopy.BuyTypes, shop.BuyTypes)
+
+		shopCopy.Messages = make([]string, len(shop.Messages))
+		copy(shopCopy.Messages, shop.Messages)
+
+		// Set the World field
+		shopCopy.World = w
+
+		// Store the deep copy in the world
+		w.shops[shopCopy.VNUM] = shopCopy
+		log.Printf("Added shop %d to world", shopCopy.VNUM)
 
 		// Link shop to room
-		if room, ok := w.rooms[shop.RoomVNUM]; ok {
-			room.Shop = shop
-			log.Printf("Linked shop %d to room %d", shop.VNUM, shop.RoomVNUM)
+		if room, ok := w.rooms[shopCopy.RoomVNUM]; ok {
+			room.Shop = shopCopy
+			log.Printf("Linked shop %d to room %d", shopCopy.VNUM, shopCopy.RoomVNUM)
+
+			// Check if the shopkeeper mob is defined in the mobile prototypes
+			if _, ok := w.mobiles[shopCopy.MobileVNUM]; ok {
+				log.Printf("Shop %d has shopkeeper mobile VNUM %d", shopCopy.VNUM, shopCopy.MobileVNUM)
+
+				// Check if the shopkeeper is already in the room
+				shopkeeperExists := false
+				for _, mob := range room.Characters {
+					if mob.IsNPC && mob.Prototype != nil && mob.Prototype.VNUM == shopCopy.MobileVNUM {
+						shopkeeperExists = true
+						log.Printf("Shopkeeper %d already exists in room %d", shopCopy.MobileVNUM, room.VNUM)
+						break
+					}
+				}
+
+				// If the shopkeeper doesn't exist, create it
+				if !shopkeeperExists {
+					// Create the shopkeeper
+					mob := w.CreateMobFromPrototype(shopCopy.MobileVNUM, room)
+					if mob != nil {
+						log.Printf("Created shopkeeper %s (VNUM %d) in room %d",
+							mob.Name, shopCopy.MobileVNUM, room.VNUM)
+					} else {
+						log.Printf("Failed to create shopkeeper %d in room %d",
+							shopCopy.MobileVNUM, room.VNUM)
+					}
+				}
+			} else {
+				log.Printf("Warning: Shop %d has invalid shopkeeper mobile VNUM %d", shopCopy.VNUM, shopCopy.MobileVNUM)
+			}
 		} else {
-			log.Printf("Warning: Shop %d has invalid room VNUM %d", shop.VNUM, shop.RoomVNUM)
+			log.Printf("Warning: Shop %d has invalid room VNUM %d", shopCopy.VNUM, shopCopy.RoomVNUM)
 		}
 	}
-	log.Printf("Loaded %d shops", len(w.shops))
+	log.Printf("Loaded %d shops into world", len(w.shops))
 
 	return nil
 }
 
 // GetCharacter gets a character by name
 func (w *World) GetCharacter(name string) (*types.Character, error) {
-	log.Printf("GetCharacter: Acquiring read mutex for character %s", name)
 	w.mutex.RLock()
-	log.Printf("GetCharacter: Acquired read mutex for character %s", name)
 	defer func() {
-		log.Printf("GetCharacter: Releasing read mutex for character %s", name)
 		w.mutex.RUnlock()
 	}()
 
@@ -188,11 +288,8 @@ func (w *World) GetCharacters() map[string]*types.Character {
 
 // CharacterExists checks if a character exists
 func (w *World) CharacterExists(name string) bool {
-	log.Printf("CharacterExists: Acquiring read mutex for character %s", name)
 	w.mutex.RLock()
-	log.Printf("CharacterExists: Acquired read mutex for character %s", name)
 	defer func() {
-		log.Printf("CharacterExists: Releasing read mutex for character %s", name)
 		w.mutex.RUnlock()
 	}()
 
@@ -249,23 +346,24 @@ func (w *World) AddCharacter(character *types.Character) {
 	}
 
 	// --- Step 2: Acquire world lock and modify world state ---
-	log.Printf("AddCharacter: Acquiring world mutex for character %s", character.Name)
 	w.mutex.Lock()
-	log.Printf("AddCharacter: Acquired world mutex for character %s", character.Name)
 
 	// Add character to the world map
 	w.characters[character.Name] = character
 	// Set the character's World field
 	character.World = w
 
+	// Initialize skills for player characters
+	if !character.IsNPC {
+		w.InitializeCharacterSkills(character)
+	}
+
 	// --- Step 3: If a target room was identified, lock it and add character ---
 	if targetRoom != nil {
 		// Re-fetch the room pointer *while holding the world lock* to ensure it wasn't deleted
 		actualRoom := w.rooms[targetRoomVNUM]
 		if actualRoom == targetRoom { // Pointer check for safety
-			log.Printf("AddCharacter: Acquiring room mutex for room %d", actualRoom.VNUM)
 			actualRoom.Lock() // Lock the specific room
-			log.Printf("AddCharacter: Acquired room mutex for room %d", actualRoom.VNUM)
 
 			// Add character to the room's list
 			character.InRoom = actualRoom
@@ -275,7 +373,6 @@ func (w *World) AddCharacter(character *types.Character) {
 
 			log.Printf("AddCharacter: Placed character %s in room %d", character.Name, actualRoom.VNUM)
 			actualRoom.Unlock() // Unlock the room
-			log.Printf("AddCharacter: Released room mutex for room %d", actualRoom.VNUM)
 		} else {
 			log.Printf("AddCharacter: Warning: Room %d changed or was removed before character %s could be placed.", targetRoomVNUM, character.Name)
 			// Character remains in the world but not in a specific room initially
@@ -289,15 +386,12 @@ func (w *World) AddCharacter(character *types.Character) {
 	}
 
 	// --- Step 4: Release world lock ---
-	log.Printf("AddCharacter: Releasing world mutex for character %s", character.Name)
 	w.mutex.Unlock()
 }
 
 // RemoveCharacter removes a character from the world
 func (w *World) RemoveCharacter(character *types.Character) {
-	log.Printf("RemoveCharacter: Acquiring world mutex for character %s", character.Name)
 	w.mutex.Lock()
-	log.Printf("RemoveCharacter: Acquired world mutex for character %s", character.Name)
 
 	// Remove character from the world map
 	delete(w.characters, character.Name)
@@ -305,9 +399,7 @@ func (w *World) RemoveCharacter(character *types.Character) {
 	// Remove character from the room (if they are in one)
 	sourceRoom := character.InRoom // Get room pointer before potentially clearing it
 	if sourceRoom != nil {
-		log.Printf("RemoveCharacter: Acquiring room mutex for room %d", sourceRoom.VNUM)
 		sourceRoom.Lock() // Lock the specific room
-		log.Printf("RemoveCharacter: Acquired room mutex for room %d", sourceRoom.VNUM)
 
 		newChars := make([]*types.Character, 0, len(sourceRoom.Characters)-1)
 		for _, ch := range sourceRoom.Characters {
@@ -319,11 +411,44 @@ func (w *World) RemoveCharacter(character *types.Character) {
 		character.InRoom = nil // Clear character's room reference
 
 		sourceRoom.Unlock() // Unlock the room
-		log.Printf("RemoveCharacter: Released room mutex for room %d", sourceRoom.VNUM)
 	}
 
-	log.Printf("RemoveCharacter: Releasing world mutex for character %s", character.Name)
 	w.mutex.Unlock()
+}
+
+// DeleteCharacter deletes a character from storage
+func (w *World) DeleteCharacter(name string) error {
+	// Acquire world lock
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	// Check if character is in the world
+	character, ok := w.characters[name]
+	if ok {
+		// Remove character from the world
+		delete(w.characters, name)
+
+		// Remove character from the room (if they are in one)
+		sourceRoom := character.InRoom // Get room pointer before potentially clearing it
+		if sourceRoom != nil {
+			sourceRoom.Lock() // Lock the specific room
+
+			newChars := make([]*types.Character, 0, len(sourceRoom.Characters)-1)
+			for _, ch := range sourceRoom.Characters {
+				if ch != character {
+					newChars = append(newChars, ch)
+				}
+			}
+			sourceRoom.Characters = newChars
+			character.InRoom = nil // Clear character's room reference
+
+			sourceRoom.Unlock() // Unlock the room
+		}
+	}
+
+	// Delete character from storage
+	// Use the storage interface to delete the character
+	return w.storage.DeleteCharacter(name)
 }
 
 // SaveCharacter saves a character to storage
@@ -331,11 +456,8 @@ func (w *World) SaveCharacter(character *types.Character) error {
 	// Note: Saving might involve reading character state (like RoomVNUM).
 	// Consider if a character-specific lock is needed, or if world RLock is sufficient.
 	// For now, assume world write lock is okay, but this could be refined.
-	log.Printf("SaveCharacter: Acquiring world mutex for character %s", character.Name)
 	w.mutex.Lock()
-	log.Printf("SaveCharacter: Acquired world mutex for character %s", character.Name)
 	defer func() {
-		log.Printf("SaveCharacter: Releasing world mutex for character %s", character.Name)
 		w.mutex.Unlock()
 	}()
 
@@ -385,6 +507,168 @@ func (w *World) GetZone(vnum int) *types.Zone {
 	return w.zones[vnum]
 }
 
+// AddDelay adds a delay to a character's actions
+func (w *World) AddDelay(ch *types.Character, delay int) {
+	// For now, just log the delay
+	// In the future, this could be used to implement a proper combat round system
+	// log.Printf("Adding delay of %d to %s", delay, ch.Name)
+}
+
+// GetCharacterInRoom finds a character in a room by name
+func (w *World) GetCharacterInRoom(room *types.Room, name string) *types.Character {
+	if room == nil || name == "" {
+		return nil
+	}
+
+	name = strings.ToLower(name)
+	for _, ch := range room.Characters {
+		if strings.Contains(strings.ToLower(ch.Name), name) {
+			return ch
+		}
+	}
+	return nil
+}
+
+// Damage applies damage to a character
+func (w *World) Damage(ch *types.Character, victim *types.Character, damage int, spellID int) {
+	if ch == nil || victim == nil {
+		return
+	}
+
+	// Apply damage
+	victim.HP -= damage
+	if victim.HP < 0 {
+		victim.HP = 0
+	}
+
+	// Check if victim is dead
+	if victim.HP <= 0 {
+		// Handle death
+		victim.Position = types.POS_DEAD
+		victim.SendMessage("You are DEAD!\r\n")
+		w.Act("$n is DEAD!", true, victim, nil, nil, types.TO_ROOM)
+	}
+}
+
+// CharFromRoom removes a character from a room
+func (w *World) CharFromRoom(ch *types.Character) {
+	if ch == nil || ch.InRoom == nil {
+		return
+	}
+
+	room := ch.InRoom
+
+	// Remove character from room
+	for i, rch := range room.Characters {
+		if rch == ch {
+			// Remove character from slice
+			room.Characters = append(room.Characters[:i], room.Characters[i+1:]...)
+			break
+		}
+	}
+
+	ch.InRoom = nil
+}
+
+// CharToRoom adds a character to a room
+func (w *World) CharToRoom(ch *types.Character, room *types.Room) {
+	if ch == nil || room == nil {
+		return
+	}
+
+	// Add character to room
+	room.Characters = append(room.Characters, ch)
+	ch.InRoom = room
+	ch.RoomVNUM = room.VNUM
+}
+
+// ObjectToChar adds an object to a character's inventory
+func (w *World) ObjectToChar(obj *types.ObjectInstance, ch *types.Character) {
+	if obj == nil || ch == nil {
+		return
+	}
+
+	// Add object to inventory
+	ch.Inventory = append(ch.Inventory, obj)
+	obj.CarriedBy = ch
+}
+
+// UnequipChar removes an object from a character's equipment
+func (w *World) UnequipChar(ch *types.Character, position int) {
+	if ch == nil || position < 0 || position >= len(ch.Equipment) {
+		return
+	}
+
+	obj := ch.Equipment[position]
+	if obj == nil {
+		return
+	}
+
+	// Remove object from equipment
+	ch.Equipment[position] = nil
+	obj.WornBy = nil
+	obj.WornOn = -1
+
+	// Add object to inventory
+	w.ObjectToChar(obj, ch)
+}
+
+// ExtractObj removes an object from the game
+func (w *World) ExtractObj(obj *types.ObjectInstance) {
+	if obj == nil {
+		return
+	}
+
+	// Remove from character's inventory
+	if obj.CarriedBy != nil {
+		for i, o := range obj.CarriedBy.Inventory {
+			if o == obj {
+				obj.CarriedBy.Inventory = append(obj.CarriedBy.Inventory[:i], obj.CarriedBy.Inventory[i+1:]...)
+				break
+			}
+		}
+		obj.CarriedBy = nil
+	}
+
+	// Remove from character's equipment
+	if obj.WornBy != nil {
+		for i, o := range obj.WornBy.Equipment {
+			if o == obj {
+				obj.WornBy.Equipment[i] = nil
+				break
+			}
+		}
+		obj.WornBy = nil
+	}
+
+	// Remove from container
+	if obj.InObj != nil {
+		for i, o := range obj.InObj.Contains {
+			if o == obj {
+				obj.InObj.Contains = append(obj.InObj.Contains[:i], obj.InObj.Contains[i+1:]...)
+				break
+			}
+		}
+		obj.InObj = nil
+	}
+
+	// Remove from room
+	if obj.InRoom != nil {
+		for i, o := range obj.InRoom.Objects {
+			if o == obj {
+				obj.InRoom.Objects = append(obj.InRoom.Objects[:i], obj.InRoom.Objects[i+1:]...)
+				break
+			}
+		}
+		obj.InRoom = nil
+	}
+
+	// Remove contents
+	for _, o := range obj.Contains {
+		w.ExtractObj(o)
+	}
+}
+
 // GetShop returns a shop by VNUM
 func (w *World) GetShop(vnum int) *types.Shop {
 	w.mutex.RLock()
@@ -392,14 +676,30 @@ func (w *World) GetShop(vnum int) *types.Shop {
 	return w.shops[vnum]
 }
 
+// SendMessageToCharacter sends a message to a character
+func (w *World) SendMessageToCharacter(character *types.Character, message string) {
+	if character == nil {
+		return
+	}
+
+	// Use the message handler if set
+	if w.messageHandler != nil {
+		w.messageHandler(character, message)
+	}
+}
+
+// SetMessageHandler sets the message handler function
+func (w *World) SetMessageHandler(handler func(*types.Character, string)) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	w.messageHandler = handler
+}
+
 // CharacterMove moves a character from one room to another
 func (w *World) CharacterMove(character *types.Character, destRoom *types.Room) {
 	// Acquire world lock first
-	log.Printf("CharacterMove: Acquiring world mutex for %s to room %v", character.Name, destRoom) // Log destRoom pointer
 	w.mutex.Lock()
-	log.Printf("CharacterMove: Acquired world mutex for %s", character.Name)
 	defer func() {
-		log.Printf("CharacterMove: Releasing world mutex for %s", character.Name)
 		w.mutex.Unlock()
 	}()
 
@@ -430,20 +730,14 @@ func (w *World) CharacterMove(character *types.Character, destRoom *types.Room) 
 
 	// --- Lock rooms in consistent order ---
 	if lockRoom1 != nil {
-		log.Printf("CharacterMove: Acquiring room mutex 1 for room %d", lockRoom1.VNUM)
 		lockRoom1.Lock()
-		log.Printf("CharacterMove: Acquired room mutex 1 for room %d", lockRoom1.VNUM)
 		defer func() {
-			log.Printf("CharacterMove: Releasing room mutex 1 for room %d", lockRoom1.VNUM)
 			lockRoom1.Unlock()
 		}()
 	}
 	if lockRoom2 != nil { // lockRoom2 is always different from lockRoom1 if not nil
-		log.Printf("CharacterMove: Acquiring room mutex 2 for room %d", lockRoom2.VNUM)
 		lockRoom2.Lock()
-		log.Printf("CharacterMove: Acquired room mutex 2 for room %d", lockRoom2.VNUM)
 		defer func() {
-			log.Printf("CharacterMove: Releasing room mutex 2 for room %d", lockRoom2.VNUM)
 			lockRoom2.Unlock()
 		}()
 	}
@@ -514,38 +808,94 @@ func (w *World) PulseZone() {
 	w.ProcessMobRespawns() // This acquires world lock
 }
 
+// createMobFromPrototypeInternal creates a new mobile instance from a prototype
+// This is an internal helper function used by both CreateMobFromPrototype and ProcessMobRespawns
+// It does not add the mob to the world or equip it - that's done by the calling functions
+func (w *World) createMobFromPrototypeInternal(_ int, mobProto *types.Mobile, baseHP, baseMana, baseMove int) *types.Character {
+	// Create a new mobile instance
+	mob := &types.Character{
+		Name:          mobProto.Name,
+		ShortDesc:     mobProto.ShortDesc,
+		LongDesc:      mobProto.LongDesc,
+		Description:   mobProto.Description,
+		Level:         mobProto.Level,
+		Sex:           mobProto.Sex,
+		Class:         mobProto.Class,
+		Race:          mobProto.Race,
+		Gold:          mobProto.Gold,
+		Experience:    mobProto.Experience,
+		Alignment:     mobProto.Alignment,
+		Position:      mobProto.Position,
+		HP:            baseHP,
+		MaxHitPoints:  baseHP,
+		ManaPoints:    baseMana,
+		MaxManaPoints: baseMana,
+		MovePoints:    baseMove,
+		MaxMovePoints: baseMove,
+		ArmorClass:    mobProto.AC,
+		HitRoll:       mobProto.HitRoll,
+		DamRoll:       mobProto.DamRoll,
+		ActFlags:      mobProto.ActFlags,
+		IsNPC:         true,
+		Prototype:     mobProto,
+		World:         w,
+		Inventory:     make([]*types.ObjectInstance, 0),
+		Equipment:     make([]*types.ObjectInstance, types.NUM_WEARS),
+		// RoomVNUM and InRoom will be set when placed
+	}
+
+	// Create a deep copy of the abilities array
+	mob.Abilities = [6]int{
+		mobProto.Abilities[0],
+		mobProto.Abilities[1],
+		mobProto.Abilities[2],
+		mobProto.Abilities[3],
+		mobProto.Abilities[4],
+		mobProto.Abilities[5],
+	}
+
+	return mob
+}
+
 // CreateMobFromPrototype creates a new mobile instance from a prototype
 // Assumes world lock is NOT held by caller.
 func (w *World) CreateMobFromPrototype(vnum int, room *types.Room) *types.Character {
-	log.Printf("CreateMobFromPrototype: Acquiring world lock for mob %d", vnum)
 	w.mutex.Lock()
-	log.Printf("CreateMobFromPrototype: Acquired world lock for mob %d", vnum)
 
 	// Get the mobile prototype (under world lock)
 	mobProto := w.mobiles[vnum]
 	if mobProto == nil {
 		w.mutex.Unlock() // Unlock before returning
-		log.Printf("CreateMobFromPrototype: Releasing world lock (prototype %d not found)", vnum)
 		log.Printf("Warning: Mobile prototype %d not found", vnum)
 		return nil
 	}
 
-	// Create a new mobile instance
-	mob := &types.Character{
-		Name:        mobProto.Name,
-		ShortDesc:   mobProto.ShortDesc,
-		LongDesc:    mobProto.LongDesc,
-		Description: mobProto.Description,
-		Level:       mobProto.Level,
-		Gold:        mobProto.Gold,
-		Position:    types.POS_STANDING, // Or mobProto.DefaultPos?
-		IsNPC:       true,
-		Prototype:   mobProto,
-		World:       w,
-		Inventory:   make([]*types.ObjectInstance, 0),
-		Equipment:   make([]*types.ObjectInstance, types.NUM_WEARS),
-		// RoomVNUM and InRoom will be set when placed
+	// Calculate hit points based on dice values
+	baseHP := 0
+	if mobProto.Dice[0] > 0 && mobProto.Dice[1] > 0 {
+		// Calculate HP using the dice formula: XdY+Z
+		// Use actual dice rolls like the original DikuMUD
+		baseHP = utils.Dice(mobProto.Dice[0], mobProto.Dice[1]) + mobProto.Dice[2]
+		// Ensure minimum HP based on level
+		minHP := mobProto.Level * 8
+		if baseHP < minHP {
+			baseHP = minHP
+		}
+	} else {
+		// Default HP based on level if no dice are specified
+		baseHP = mobProto.Level * 8
 	}
+
+	// Calculate mana and move points based on level
+	baseMana := mobProto.Level * 10
+	baseMove := mobProto.Level * 10
+
+	// Create a new mobile instance using the helper function
+	mob := w.createMobFromPrototypeInternal(vnum, mobProto, baseHP, baseMana, baseMove)
+
+	// Log the mob stats for debugging
+	log.Printf("CreateMobFromPrototype: Created mob %s (VNUM %d) with stats: Level=%d, HitRoll=%d, DamRoll=%d, AC=%v, Gold=%d, Exp=%d",
+		mob.Name, vnum, mob.Level, mob.HitRoll, mob.DamRoll, mob.ArmorClass, mob.Gold, mob.Experience)
 
 	// Add the mobile to the world map (under world lock)
 	w.characters[mob.Name] = mob // Consider potential name collisions?
@@ -555,26 +905,35 @@ func (w *World) CreateMobFromPrototype(vnum int, room *types.Room) *types.Charac
 		// Verify room pointer is still valid under world lock
 		actualRoom := w.rooms[room.VNUM]
 		if actualRoom == room {
-			log.Printf("CreateMobFromPrototype: Acquiring room lock for room %d", actualRoom.VNUM)
 			actualRoom.Lock() // Lock the room before modifying
-			log.Printf("CreateMobFromPrototype: Acquired room lock for room %d", actualRoom.VNUM)
 
 			mob.InRoom = actualRoom
 			actualRoom.Characters = append(actualRoom.Characters, mob)
 			mob.RoomVNUM = actualRoom.VNUM
 
 			actualRoom.Unlock() // Unlock the room
-			log.Printf("CreateMobFromPrototype: Released room lock for room %d", actualRoom.VNUM)
 		} else {
 			log.Printf("CreateMobFromPrototype: Warning - Room %d changed or removed before mob %d could be placed.", room.VNUM, vnum)
 			// Mob exists in world map but not placed in room
 		}
 	}
 
-	log.Printf("CreateMobFromPrototype: Releasing world lock for mob %d", vnum)
+	// Equip the mob with its default equipment
+	w.equipMobFromPrototype(mob, mobProto)
+
 	w.mutex.Unlock() // Release world lock
 
 	return mob
+}
+
+// AddMobile adds a mobile prototype to the world
+func (w *World) AddMobile(mobile *types.Mobile) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+
+	// Add the mobile to the world's mobile prototypes
+	w.mobiles[mobile.VNUM] = mobile
+	log.Printf("Added mobile prototype #%d (%s) to the world", mobile.VNUM, mobile.Name)
 }
 
 // ScheduleMobRespawn schedules a mob for respawning
@@ -586,9 +945,7 @@ func (w *World) ScheduleMobRespawn(mob *types.Character) {
 
 	roomVNUMToRespawn := mob.RoomVNUM // Capture VNUM before locking
 
-	log.Printf("ScheduleMobRespawn: Acquiring world lock for mob %s (VNUM %d)", mob.Name, mob.Prototype.VNUM)
 	w.mutex.Lock()
-	log.Printf("ScheduleMobRespawn: Acquired world lock for mob %s", mob.Name)
 
 	// --- Determine Zone (under world lock) ---
 	var zone *types.Zone
@@ -608,7 +965,6 @@ func (w *World) ScheduleMobRespawn(mob *types.Character) {
 
 	if zone == nil {
 		w.mutex.Unlock()
-		log.Printf("ScheduleMobRespawn: Releasing world lock (failed to find zone for mob %s)", mob.Name)
 		log.Printf("Failed to find zone for mob %s (VNUM %d) in room %d",
 			mob.Name, mob.Prototype.VNUM, roomVNUMToRespawn)
 		return
@@ -632,9 +988,7 @@ func (w *World) ScheduleMobRespawn(mob *types.Character) {
 		// Verify room pointer consistency
 		actualRoom := w.rooms[sourceRoom.VNUM]
 		if actualRoom == sourceRoom {
-			log.Printf("ScheduleMobRespawn: Acquiring room lock for room %d", actualRoom.VNUM)
 			actualRoom.Lock()
-			log.Printf("ScheduleMobRespawn: Acquired room lock for room %d", actualRoom.VNUM)
 
 			newChars := make([]*types.Character, 0, len(actualRoom.Characters)-1)
 			found := false
@@ -653,7 +1007,6 @@ func (w *World) ScheduleMobRespawn(mob *types.Character) {
 			mob.InRoom = nil // Clear mob's room reference
 
 			actualRoom.Unlock()
-			log.Printf("ScheduleMobRespawn: Released room lock for room %d", actualRoom.VNUM)
 		} else {
 			log.Printf("ScheduleMobRespawn: Warning - Room %d changed or removed before mob %s could be removed from it.", sourceRoom.VNUM, mob.Name)
 			mob.InRoom = nil // Still clear mob's reference
@@ -662,7 +1015,6 @@ func (w *World) ScheduleMobRespawn(mob *types.Character) {
 		mob.InRoom = nil // Ensure reference is cleared if mob wasn't in a room
 	}
 
-	log.Printf("ScheduleMobRespawn: Releasing world lock for mob %s", mob.Name)
 	w.mutex.Unlock() // Release world lock
 
 	log.Printf("Scheduled mob %s (VNUM %d) for respawn in room %d at %s",
@@ -724,36 +1076,47 @@ func (w *World) ProcessMobRespawns() {
 				continue // Skip this respawn
 			}
 
-			// Create a new mobile instance
-			mob := &types.Character{
-				Name:        mobProto.Name,
-				ShortDesc:   mobProto.ShortDesc,
-				LongDesc:    mobProto.LongDesc,
-				Description: mobProto.Description,
-				Level:       mobProto.Level,
-				Gold:        mobProto.Gold,
-				Position:    types.POS_STANDING, // Or mobProto.DefaultPos?
-				IsNPC:       true,
-				Prototype:   mobProto,
-				World:       w,
-				Inventory:   make([]*types.ObjectInstance, 0),
-				Equipment:   make([]*types.ObjectInstance, types.NUM_WEARS),
+			// Calculate hit points based on dice values
+			baseHP := 0
+			if mobProto.Dice[0] > 0 && mobProto.Dice[1] > 0 {
+				// Calculate HP using the dice formula: XdY+Z
+				// Use actual dice rolls like the original DikuMUD
+				baseHP = utils.Dice(mobProto.Dice[0], mobProto.Dice[1]) + mobProto.Dice[2]
+				// Ensure minimum HP based on level
+				minHP := mobProto.Level * 8
+				if baseHP < minHP {
+					baseHP = minHP
+				}
+			} else {
+				// Default HP based on level if no dice are specified
+				baseHP = mobProto.Level * 8
 			}
+
+			// Calculate mana and move points based on level
+			baseMana := mobProto.Level * 10
+			baseMove := mobProto.Level * 10
+
+			// Create a new mobile instance using the helper function
+			mob := w.createMobFromPrototypeInternal(respawn.MobVNUM, mobProto, baseHP, baseMana, baseMove)
+
+			// Log the mob stats for debugging
+			log.Printf("ProcessMobRespawns: Created mob %s (VNUM %d) with stats: Level=%d, HitRoll=%d, DamRoll=%d, AC=%v, Gold=%d, Exp=%d",
+				mob.Name, respawn.MobVNUM, mob.Level, mob.HitRoll, mob.DamRoll, mob.ArmorClass, mob.Gold, mob.Experience)
 
 			// Add the mobile to the world map (under world lock)
 			w.characters[mob.Name] = mob // Again, potential name collision?
 
+			// Equip the mob with its default equipment
+			w.equipMobFromPrototype(mob, mobProto)
+
 			// Add the mobile to the room (needs room lock)
-			log.Printf("ProcessMobRespawns: Acquiring room lock for room %d", room.VNUM)
 			room.Lock()
-			log.Printf("ProcessMobRespawns: Acquired room lock for room %d", room.VNUM)
 
 			mob.InRoom = room
 			room.Characters = append(room.Characters, mob)
 			mob.RoomVNUM = room.VNUM
 
 			room.Unlock()
-			log.Printf("ProcessMobRespawns: Released room lock for room %d", room.VNUM)
 
 			log.Printf("Respawned mob %s (VNUM %d) in room %d",
 				mob.Name, respawn.MobVNUM, respawn.RoomVNUM)
@@ -765,4 +1128,38 @@ func (w *World) ProcessMobRespawns() {
 
 	// Update the respawn list
 	w.mobRespawns = remainingRespawns
+}
+
+// equipMobFromPrototype equips a mob with its default equipment from the prototype
+// Assumes world lock is already held by caller
+func (w *World) equipMobFromPrototype(mob *types.Character, mobProto *types.Mobile) {
+	// Check if the mob has any equipment defined in the prototype
+	if len(mobProto.Equipment) == 0 {
+		return
+	}
+
+	// Equip the mob with each item in the prototype's equipment list
+	for _, eq := range mobProto.Equipment {
+		// Check if the equipment should be equipped based on chance
+		if eq.Chance > 0 && (eq.Chance == 100 || (rand.Intn(100) < eq.Chance)) {
+			// Get the object prototype
+			objProto := w.objects[eq.ObjectVNUM]
+			if objProto == nil {
+				log.Printf("Warning: Object prototype %d not found for mob equipment", eq.ObjectVNUM)
+				continue
+			}
+
+			// Create a new object instance
+			obj := w.CreateObjectFromPrototype(eq.ObjectVNUM)
+			if obj == nil {
+				log.Printf("Warning: Failed to create object %d for mob equipment", eq.ObjectVNUM)
+				continue
+			}
+
+			// Equip the mob with the object
+			obj.WornBy = mob
+			obj.WornOn = eq.Position
+			mob.Equipment[eq.Position] = obj
+		}
+	}
 }

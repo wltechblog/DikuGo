@@ -1,0 +1,42 @@
+# Cline's Project Intelligence for DikuGo
+
+## Project Patterns
+
+### Combat System
+- NPC damage is calculated using DamageType and AttackType fields (not Dice fields)
+- Hit dice (Dice[0], Dice[1], Dice[2]) are used for HP calculation
+- Damage dice (DamageType, AttackType) are used for damage calculation
+- DamRoll is added to damage as a bonus
+
+### Command Implementation
+- Commands implement the Command interface with methods like Name(), Aliases(), etc.
+- Commands are registered in the command registry
+- Command execution happens through the Execute method
+
+### Data Structure
+- Character struct is used for both players and NPCs
+- Mobile struct is used as a prototype for NPCs
+- Room struct represents locations in the world
+- Item struct represents objects in the game
+
+## Code Style Preferences
+- Use Go idioms and standard library when possible
+- Follow Go naming conventions (CamelCase for exported, camelCase for internal)
+- Add comments for complex logic
+- Use descriptive variable names
+
+## Implementation Notes
+- The game follows the original DikuMUD mechanics closely
+- Compatibility with original DikuMUD data files is maintained
+- The codebase is organized by domain (world, combat, command, etc.)
+
+## Testing Approach
+- Manual testing through telnet client
+- Unit tests for critical components
+- Test scripts for specific scenarios
+
+## Common Patterns
+- Use of prototypes for creating game objects
+- Event-driven updates for game state
+- Command pattern for player actions
+- Factory methods for creating game entities

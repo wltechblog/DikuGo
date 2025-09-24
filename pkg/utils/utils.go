@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"crypto/rand"
+	crypto "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -22,7 +22,7 @@ func VerifyPassword(password, hash string) bool {
 // GenerateRandomString generates a random string of the specified length
 func GenerateRandomString(length int) (string, error) {
 	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
+	if _, err := crypto.Read(bytes); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(bytes)[:length], nil
@@ -37,12 +37,12 @@ func ParseCommand(input string) (string, string) {
 
 	parts := strings.SplitN(input, " ", 2)
 	command := strings.ToLower(parts[0])
-	
+
 	var args string
 	if len(parts) > 1 {
 		args = strings.TrimSpace(parts[1])
 	}
-	
+
 	return command, args
 }
 
@@ -70,10 +70,10 @@ func Colorize(text string, color string) string {
 		"bold":      "\033[1m",
 		"underline": "\033[4m",
 	}
-	
+
 	if code, ok := colors[color]; ok {
 		return fmt.Sprintf("%s%s%s", code, text, colors["reset"])
 	}
-	
+
 	return text
 }

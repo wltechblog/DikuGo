@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/wltechblog/DikuGo/pkg/types"
@@ -37,18 +38,30 @@ func (c *BuyCommand) LogCommand() bool {
 
 // Execute executes the buy command
 func (c *BuyCommand) Execute(ch *types.Character, args string) error {
+	// Check if the character is in a room
+	if ch.InRoom == nil {
+		return fmt.Errorf("You are not in a room.")
+	}
+
 	// Check if the character is in a shop
 	shop := ch.InRoom.Shop
 	if shop == nil {
 		return fmt.Errorf("You are not in a shop.")
 	}
 
+	// Debug information
+	log.Printf("Buy command: Room %d has shop %d with MobileVNUM %d", ch.InRoom.VNUM, shop.VNUM, shop.MobileVNUM)
+
 	// Find the shopkeeper
 	var keeper *types.Character
 	for _, mob := range ch.InRoom.Characters {
-		if mob.IsNPC && mob.Prototype != nil && mob.Prototype.VNUM == shop.MobileVNUM {
-			keeper = mob
-			break
+		if mob.IsNPC && mob.Prototype != nil {
+			log.Printf("Buy command: Found NPC %s (VNUM %d) in room", mob.Name, mob.Prototype.VNUM)
+			if mob.Prototype.VNUM == shop.MobileVNUM {
+				keeper = mob
+				log.Printf("Buy command: Found shopkeeper %s (VNUM %d)", mob.Name, mob.Prototype.VNUM)
+				break
+			}
 		}
 	}
 
@@ -103,7 +116,7 @@ func (c *BuyCommand) Execute(ch *types.Character, args string) error {
 	}
 
 	// Calculate the price
-	price := int(float64(foundObj.Cost) * shop.ProfitSell)
+	price := int(float64(foundObj.Cost) * shop.ProfitBuy)
 
 	// Check if the character has enough gold
 	if ch.Gold < price {

@@ -30,18 +30,25 @@ func readString(parser *Parser) string {
 	// Add the first line
 	builder.WriteString(line)
 
-	// Read lines until we find one that is just ~
+	// Read lines until we find one that is just ~ or ends with ~
 	for parser.NextLine() {
 		line = parser.Line()
 		if line == "~" {
 			// End of string
 			break
+		} else if strings.HasSuffix(line, "~") {
+			// Line ends with ~, add it without the ~ and break
+			builder.WriteString("\n")
+			builder.WriteString(strings.TrimSuffix(line, "~"))
+			break
+		} else {
+			// Continue the string
+			builder.WriteString("\n")
+			builder.WriteString(line)
 		}
-		builder.WriteString("\n")
-		builder.WriteString(line)
 	}
 
-	return strings.TrimSpace(builder.String())
+	return builder.String()
 }
 
 // ParseRooms parses the room file and returns a slice of rooms
