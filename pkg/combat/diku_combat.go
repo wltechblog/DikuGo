@@ -365,25 +365,14 @@ func (m *DikuCombatManager) doAttack(attacker, defender *types.Character) {
 			}
 		}
 
-		// Create a corpse
+		// Handle character death using the centralized death handler
 		w, ok := defender.World.(interface {
-			MakeCorpse(*types.Character) *types.ObjectInstance
-			RemoveCharacter(*types.Character)
-			ScheduleMobRespawn(*types.Character)
+			HandleCharacterDeath(*types.Character)
 		})
 		if ok {
-			// Create the corpse first
-			w.MakeCorpse(defender)
-
-			// If the defender is an NPC, schedule respawn
-			if defender.IsNPC && defender.Prototype != nil {
-				w.ScheduleMobRespawn(defender)
-			} else {
-				// For players or if scheduling fails, just remove from room
-				w.RemoveCharacter(defender)
-			}
+			w.HandleCharacterDeath(defender)
 		} else {
-			log.Printf("Warning: Could not create corpse for %s", defender.Name)
+			log.Printf("Warning: Could not handle death for %s", defender.Name)
 		}
 
 		// Handle death

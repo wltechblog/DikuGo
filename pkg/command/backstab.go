@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 
 	"github.com/wltechblog/DikuGo/pkg/types"
@@ -188,23 +189,14 @@ func (c *BackstabCommand) Execute(character *types.Character, args string) error
 			}
 		}
 
-		// Create a corpse
+		// Handle character death using the centralized death handler
 		w, ok := victim.World.(interface {
-			MakeCorpse(*types.Character) *types.ObjectInstance
-			RemoveCharacter(*types.Character)
-			ScheduleMobRespawn(*types.Character)
+			HandleCharacterDeath(*types.Character)
 		})
 		if ok {
-			// Create the corpse first
-			w.MakeCorpse(victim)
-
-			// If the defender is an NPC, schedule respawn
-			if victim.IsNPC && victim.Prototype != nil {
-				w.ScheduleMobRespawn(victim)
-			} else {
-				// For players or if scheduling fails, just remove from room
-				w.RemoveCharacter(victim)
-			}
+			w.HandleCharacterDeath(victim)
+		} else {
+			log.Printf("Warning: Could not handle death for %s", victim.Name)
 		}
 
 		// Stop combat

@@ -205,7 +205,7 @@ func (m *Manager) updateCombat(combat *Combat) {
 // doAttack performs an attack
 func (m *Manager) doAttack(attacker, defender *types.Character) {
 	// Calculate the hit chance
-	hitChance := 50 + (attacker.Level - defender.Level) * 5
+	hitChance := 50 + (attacker.Level-defender.Level)*5
 
 	// Roll the dice
 	roll := rand.Intn(100)
@@ -243,6 +243,16 @@ func (m *Manager) doAttack(attacker, defender *types.Character) {
 				if ch != attacker && ch != defender {
 					ch.SendMessage(fmt.Sprintf("%s has slain %s!\r\n", attacker.ShortDesc, defender.ShortDesc))
 				}
+			}
+
+			// Handle character death using the centralized death handler
+			w, ok := defender.World.(interface {
+				HandleCharacterDeath(*types.Character)
+			})
+			if ok {
+				w.HandleCharacterDeath(defender)
+			} else {
+				log.Printf("Warning: Could not handle death for %s", defender.Name)
 			}
 		}
 	} else {

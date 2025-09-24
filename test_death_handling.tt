@@ -1,0 +1,63 @@
+#class {death_test} {open}
+
+#action {By what name do you wish to be known?} {
+    DeathTest
+}
+
+#action {I don't know DeathTest. Is this a new character?} {
+    y
+}
+
+#action {Please enter a password for DeathTest:} {
+    testpass
+}
+
+#action {Please confirm your password:} {
+    testpass
+}
+
+#action {Select your class:} {
+    1
+}
+
+#action {Press ENTER to continue...} {
+    #cr
+}
+
+#action {Welcome to DikuGo!} {
+    1
+}
+
+#action {Make your choice:} {
+    1
+}
+
+#action {Welcome, DeathTest} {
+    #delay {1} {
+        goto 3054;
+        #delay {1} {
+            kill cityguard;
+            #delay {10} {
+                #if {"%0" == "Make your choice:"} {
+                    #showme "SUCCESS: Death handling worked - returned to menu!";
+                    0;
+                    #class death_test kill
+                } {
+                    #showme "FAILED: Still in game after death";
+                    quit;
+                    #class death_test kill
+                }
+            }
+        }
+    }
+}
+
+#action {You have been KILLED!!} {
+    #showme "Death message received, waiting for menu...";
+}
+
+#action {You find yourself back at the temple...} {
+    #showme "Temple message received...";
+}
+
+#session death_test localhost 4000

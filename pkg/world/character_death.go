@@ -1,7 +1,6 @@
 package world
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/wltechblog/DikuGo/pkg/types"
@@ -21,28 +20,15 @@ func (w *World) HandleCharacterDeath(victim *types.Character) {
 	// If the victim is a player, handle player death
 	if !victim.IsNPC {
 		// Send death message to the player
-		if victim.Client != nil {
-			if client, ok := victim.Client.(interface {
-				Write(string)
-				SetState(int)
-			}); ok {
-				client.Write(fmt.Sprintf("\r\nYou have been KILLED!!\r\n"))
+		victim.SendMessage("\r\nYou have been KILLED!!\r\n")
+		victim.SendMessage("You find yourself back at the temple...\r\n")
 
-				// Save the character
-				w.SaveCharacter(victim)
+		// Reset character for resurrection
+		victim.HP = 1
+		victim.Position = types.POS_STANDING
 
-				// Remove from world
-				w.RemoveCharacter(victim)
-
-				// Reset character for resurrection
-				victim.HP = 1
-				victim.Position = types.POS_STANDING
-
-				// Return to menu
-				client.Write("\r\n                                 DikuGo Main Menu\r\n\r\n1) Enter the game\r\n2) Enter description\r\n3) Read the background story\r\n4) Change password\r\n0) Exit from DikuGo\r\n\r\nMake your choice: ")
-				client.SetState(3) // StateMainMenu = 3
-			}
-		}
+		// Set the special flag to indicate the player should return to the menu
+		victim.SendMessage("RETURN_TO_MENU")
 	} else if victim.Prototype != nil {
 		// Schedule respawn for NPCs
 		w.ScheduleMobRespawn(victim)
