@@ -51,8 +51,9 @@ func (m *EnhancedDikuCombatManager) StartCombat(attacker, defender *types.Charac
 		LastAttack: time.Now().Add(-1 * time.Second), // Allow immediate attack
 	}
 
-	// Set the character's position to fighting
+	// Set the character's position and fighting state
 	attacker.Position = types.POS_FIGHTING
+	attacker.Fighting = defender
 
 	// If the defender is not already fighting the attacker, start combat for them too
 	if _, ok := m.Combats[defender.Name]; !ok {
@@ -62,8 +63,9 @@ func (m *EnhancedDikuCombatManager) StartCombat(attacker, defender *types.Charac
 			LastAttack: time.Now().Add(-1 * time.Second), // Allow immediate attack
 		}
 
-		// Set the defender's position to fighting
+		// Set the defender's position and fighting state
 		defender.Position = types.POS_FIGHTING
+		defender.Fighting = attacker
 	}
 
 	return nil
@@ -72,16 +74,36 @@ func (m *EnhancedDikuCombatManager) StartCombat(attacker, defender *types.Charac
 // StopCombat stops combat for a character
 func (m *EnhancedDikuCombatManager) StopCombat(character *types.Character) {
 	// Check if the character is in combat
-	if _, ok := m.Combats[character.Name]; !ok {
+	combatState, ok := m.Combats[character.Name]
+	if !ok {
 		return
 	}
+
+	// Get the target to clear their fighting state too
+	target := combatState.Target
 
 	// Remove the character from combat
 	delete(m.Combats, character.Name)
 
+	// Also remove the target from combat if they exist
+	if target != nil {
+		delete(m.Combats, target.Name)
+	}
+
+	// Clear the fighting pointers
+	character.Fighting = nil
+	if target != nil {
+		target.Fighting = nil
+	}
+
 	// Set the character's position to standing if they were fighting
 	if character.Position == types.POS_FIGHTING {
 		character.Position = types.POS_STANDING
+	}
+
+	// Set the target's position to standing if they were fighting
+	if target != nil && target.Position == types.POS_FIGHTING {
+		target.Position = types.POS_STANDING
 	}
 }
 
@@ -101,6 +123,10 @@ func (m *EnhancedDikuCombatManager) ProcessCombat() {
 	// Update the last combat tick
 	m.LastCombatTick = now
 
+	// Collect characters that need to stop combat (to avoid modifying map while iterating)
+	var charactersToStopCombat []*types.Character
+	var charactersToAttack []*CombatState
+
 	// Process combat for each character
 	for id, state := range m.Combats {
 		// Skip if the character or target is nil
@@ -111,25 +137,35 @@ func (m *EnhancedDikuCombatManager) ProcessCombat() {
 
 		// Skip if the character is not in a room
 		if state.Character.InRoom == nil {
+			// Clear fighting state before removing
+			if state.Character != nil {
+				state.Character.Fighting = nil
+				if state.Character.Position == types.POS_FIGHTING {
+					state.Character.Position = types.POS_STANDING
+				}
+			}
 			delete(m.Combats, id)
 			continue
 		}
 
 		// Skip if the target is not in the same room
 		if state.Target.InRoom != state.Character.InRoom {
-			delete(m.Combats, id)
+			// Mark for stopping combat when characters are separated
+			charactersToStopCombat = append(charactersToStopCombat, state.Character)
 			continue
 		}
 
 		// Skip if the character is not in a fighting position
 		if state.Character.Position != types.POS_FIGHTING {
-			delete(m.Combats, id)
+			// Mark for stopping combat if character is no longer fighting
+			charactersToStopCombat = append(charactersToStopCombat, state.Character)
 			continue
 		}
 
 		// Skip if the target is dead
 		if state.Target.Position == types.POS_DEAD {
-			delete(m.Combats, id)
+			// Mark for stopping combat when target dies
+			charactersToStopCombat = append(charactersToStopCombat, state.Character)
 			continue
 		}
 
@@ -141,7 +177,17 @@ func (m *EnhancedDikuCombatManager) ProcessCombat() {
 		// Update the last attack time
 		state.LastAttack = now
 
-		// Perform the attack
+		// Mark for attack
+		charactersToAttack = append(charactersToAttack, state)
+	}
+
+	// Stop combat for characters that need it
+	for _, character := range charactersToStopCombat {
+		m.StopCombat(character)
+	}
+
+	// Perform attacks for characters that can attack
+	for _, state := range charactersToAttack {
 		m.doAttack(state.Character, state.Target)
 	}
 }
@@ -187,6 +233,9 @@ func (m *EnhancedDikuCombatManager) doAttack(attacker, defender *types.Character
 	if defender.HP <= 0 {
 		defender.HP = 0
 		defender.Position = types.POS_DEAD
+
+		// Stop combat for both characters
+		m.StopCombat(attacker)
 
 		// Send death messages
 		attacker.SendMessage(fmt.Sprintf("You have slain %s!\r\n", defender.ShortDesc))
@@ -409,8 +458,13 @@ func sendEnhancedCombatMessage(attacker, defender *types.Character, damage int, 
 
 // getEnhancedWeaponType returns the weapon type for a character
 func getEnhancedWeaponType(ch *types.Character) int {
+	// Check if equipment array is properly initialized and has enough slots
+	if ch.Equipment == nil || len(ch.Equipment) <= types.WEAR_WIELD {
+		return types.TYPE_HIT
+	}
+
 	weapon := ch.Equipment[types.WEAR_WIELD]
-	if weapon != nil {
+	if weapon != nil && weapon.Prototype != nil {
 		// Use the weapon's type
 		return weapon.Prototype.Value[3]
 	}
