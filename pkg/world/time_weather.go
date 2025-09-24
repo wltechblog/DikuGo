@@ -193,10 +193,8 @@ func (w *World) PulseWeather() {
 }
 
 // SendToOutdoor sends a message to all characters who are outside
+// NOTE: This function assumes the caller already holds the appropriate lock on w.mutex
 func (w *World) SendToOutdoor(message string) {
-	w.mutex.RLock()
-	defer w.mutex.RUnlock()
-
 	// Get all characters
 	for _, ch := range w.characters {
 		// Check if character is in a room
