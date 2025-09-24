@@ -552,13 +552,18 @@ func (w *World) Damage(ch *types.Character, victim *types.Character, damage int,
 	}
 }
 
-// CharFromRoom removes a character from a room
+// CharFromRoom removes a character from a room (DEPRECATED - use CharacterMove instead)
+// This method is kept for compatibility with spell system but should be avoided
 func (w *World) CharFromRoom(ch *types.Character) {
 	if ch == nil || ch.InRoom == nil {
 		return
 	}
 
 	room := ch.InRoom
+
+	// Lock the room before modifying
+	room.Lock()
+	defer room.Unlock()
 
 	// Remove character from room
 	for i, rch := range room.Characters {
@@ -572,11 +577,16 @@ func (w *World) CharFromRoom(ch *types.Character) {
 	ch.InRoom = nil
 }
 
-// CharToRoom adds a character to a room
+// CharToRoom adds a character to a room (DEPRECATED - use CharacterMove instead)
+// This method is kept for compatibility with spell system but should be avoided
 func (w *World) CharToRoom(ch *types.Character, room *types.Room) {
 	if ch == nil || room == nil {
 		return
 	}
+
+	// Lock the room before modifying
+	room.Lock()
+	defer room.Unlock()
 
 	// Add character to room
 	room.Characters = append(room.Characters, ch)
@@ -699,12 +709,6 @@ func (w *World) SetMessageHandler(handler func(*types.Character, string)) {
 
 // CharacterMove moves a character from one room to another
 func (w *World) CharacterMove(character *types.Character, destRoom *types.Room) {
-	// Acquire world lock first
-	w.mutex.Lock()
-	defer func() {
-		w.mutex.Unlock()
-	}()
-
 	sourceRoom := character.InRoom
 
 	// --- Early exit if no actual move needed ---
