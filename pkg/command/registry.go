@@ -12,7 +12,7 @@ func InitRegistry(w *world.World, combatManager CombatManagerInterface) *Registr
 	// Register commands
 	registry.Register(&LookCommand{})
 	registry.Register(&SayCommand{})
-	registry.Register(&WhoCommand{Characters: w.GetCharacters()})
+	registry.Register(&WhoCommand{})
 	registry.Register(&QuitCommand{})
 	registry.Register(&KillCommand{CombatManager: combatManager})
 	registry.Register(&GetCommand{})

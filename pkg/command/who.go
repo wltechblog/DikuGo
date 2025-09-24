@@ -8,13 +8,20 @@ import (
 )
 
 // WhoCommand represents the who command
-type WhoCommand struct {
-	// Characters is a map of all characters in the game
-	Characters map[string]*types.Character
-}
+type WhoCommand struct{}
 
 // Execute executes the who command
 func (c *WhoCommand) Execute(character *types.Character, args string) error {
+	// Get the current list of characters from the world
+	world, ok := character.World.(interface {
+		GetCharacters() map[string]*types.Character
+	})
+	if !ok {
+		return fmt.Errorf("world interface not available")
+	}
+
+	characters := world.GetCharacters()
+
 	// Build the who list
 	var sb strings.Builder
 
@@ -22,7 +29,7 @@ func (c *WhoCommand) Execute(character *types.Character, args string) error {
 	sb.WriteString("---------------\r\n")
 
 	// Add each character to the list
-	for _, ch := range c.Characters {
+	for _, ch := range characters {
 		if !ch.IsNPCFlag() {
 			sb.WriteString(fmt.Sprintf("[%2d] %s%s\r\n", ch.Level, ch.Name, ch.Title))
 		}
