@@ -58,20 +58,15 @@ func (c *MovementCommand) Execute(character *types.Character, args string) error
 		}
 	}
 
-	// Move the character to the new room
-	fromRoom := character.InRoom
-
-	// Remove the character from the old room
-	for i, ch := range fromRoom.Characters {
-		if ch == character {
-			fromRoom.Characters = append(fromRoom.Characters[:i], fromRoom.Characters[i+1:]...)
-			break
-		}
+	// Move the character to the new room using the world's proper movement method
+	if worldInterface, ok := character.World.(interface {
+		CharacterMove(*types.Character, *types.Room)
+	}); ok {
+		worldInterface.CharacterMove(character, destRoom)
+	} else {
+		log.Printf("Movement: Character %s has no World interface with CharacterMove method", character.Name)
+		return fmt.Errorf("you cannot go that way")
 	}
-
-	// Add the character to the new room
-	character.InRoom = destRoom
-	destRoom.Characters = append(destRoom.Characters, character)
 
 	// Show the new room to the character
 	var sb strings.Builder

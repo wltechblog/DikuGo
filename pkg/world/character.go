@@ -17,6 +17,7 @@ func NewCharacter(name string, isNPC bool) *types.Character {
 		Gold:          0,
 		Experience:    0,
 		Alignment:     0,
+		RoomVNUM:      -1, // No saved room, will be placed in default starting room
 		HP:            20,
 		MaxHitPoints:  20,
 		ManaPoints:    100,

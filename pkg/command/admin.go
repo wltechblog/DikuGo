@@ -63,19 +63,14 @@ func (c *GotoCommand) Execute(character *types.Character, args string) error {
 		return fmt.Errorf("room %d does not exist", vnum)
 	}
 
-	// Remove character from current room
-	if character.InRoom != nil {
-		for i, ch := range character.InRoom.Characters {
-			if ch == character {
-				character.InRoom.Characters = append(character.InRoom.Characters[:i], character.InRoom.Characters[i+1:]...)
-				break
-			}
-		}
+	// Move character to destination room using the world's proper movement method
+	if worldInterface, ok := character.World.(interface {
+		CharacterMove(*types.Character, *types.Room)
+	}); ok {
+		worldInterface.CharacterMove(character, destRoom)
+	} else {
+		return fmt.Errorf("world interface not available for movement")
 	}
-
-	// Add character to destination room
-	character.InRoom = destRoom
-	destRoom.Characters = append(destRoom.Characters, character)
 
 	// Show the room to the character
 	lookCmd := &LookCommand{}

@@ -309,8 +309,10 @@ func (w *World) AddCharacter(character *types.Character) {
 	var targetRoom *types.Room
 	targetRoomVNUM := 0 // Default to 0 if no specific room found
 
-	// If the character has a RoomVNUM, try to use that
-	if character.RoomVNUM > 0 {
+	// If the character has a RoomVNUM set (including room 0), try to use that
+	// Note: In DikuMUD, room 0 is a valid room (The Void), so we check for >= 0
+	// We use -1 or some other negative value to indicate "no saved room"
+	if character.RoomVNUM >= 0 {
 		// Use GetRoom which acquires world RLock internally
 		foundRoom := w.GetRoom(character.RoomVNUM)
 		if foundRoom != nil {
@@ -324,20 +326,20 @@ func (w *World) AddCharacter(character *types.Character) {
 
 	// If we still don't have a room, use default rooms
 	if targetRoom == nil {
-		// Try room 0 (The Void) first
-		foundRoom := w.GetRoom(0)
+		// Try room 3001 (Temple of Midgaard) first, as per original DikuMUD
+		foundRoom := w.GetRoom(3001)
 		if foundRoom != nil {
 			targetRoom = foundRoom
 			targetRoomVNUM = targetRoom.VNUM
-			log.Printf("AddCharacter: Target room determined (default 0): %d", targetRoomVNUM)
+			log.Printf("AddCharacter: Target room determined (default 3001): %d", targetRoomVNUM)
 		} else {
-			log.Printf("AddCharacter: Starting room 0 not found, trying room 3001")
-			// Try room 3001 (Temple of Midgaard)
-			foundRoom = w.GetRoom(3001)
+			log.Printf("AddCharacter: Starting room 3001 not found, trying room 0")
+			// Try room 0 (The Void) as fallback
+			foundRoom = w.GetRoom(0)
 			if foundRoom != nil {
 				targetRoom = foundRoom
 				targetRoomVNUM = targetRoom.VNUM
-				log.Printf("AddCharacter: Target room determined (default 3001): %d", targetRoomVNUM)
+				log.Printf("AddCharacter: Target room determined (fallback 0): %d", targetRoomVNUM)
 			} else {
 				log.Printf("AddCharacter: No starting room found for character %s. Character will not be placed in a room initially.", character.Name)
 				// targetRoom remains nil, targetRoomVNUM remains 0

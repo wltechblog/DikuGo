@@ -1,0 +1,41 @@
+#class {test} {open}
+
+#action {By what name do you wish to be known?} {
+    TestPlayer
+}
+
+#action {I don't know TestPlayer. Is this a new character?} {
+    y
+}
+
+#action {Please enter a password for TestPlayer:} {
+    testpass
+}
+
+#action {Please confirm your password:} {
+    testpass
+}
+
+#action {Select your class:} {
+    1
+}
+
+#action {Press ENTER to continue...} {
+    #cr
+}
+
+#action {Welcome to DikuGo!} {
+    look;
+    #delay {2} {
+        up;
+        #delay {2} {
+            look;
+            #delay {2} {
+                quit;
+                #class test kill
+            }
+        }
+    }
+}
+
+#session test localhost 4000

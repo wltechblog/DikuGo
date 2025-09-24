@@ -400,6 +400,7 @@ func (c *Client) HandleGetClass(input string) {
 		Position:      types.POS_STANDING,
 		ShortDesc:     name,
 		Class:         classChoice,
+		RoomVNUM:      -1, // No saved room, will be placed in default starting room
 		Skills:        make(map[int]int),
 		Spells:        make(map[int]int),
 		Equipment:     make([]*types.ObjectInstance, types.NUM_WEARS),
