@@ -355,8 +355,9 @@ func (w *World) AddCharacter(character *types.Character) {
 	// Set the character's World field
 	character.World = w
 
-	// Initialize skills for player characters
+	// Reset character state when entering the game (like original DikuMUD reset_char)
 	if !character.IsNPC {
+		w.resetPlayerCharacter(character)
 		w.InitializeCharacterSkills(character)
 	}
 
@@ -389,6 +390,34 @@ func (w *World) AddCharacter(character *types.Character) {
 
 	// --- Step 4: Release world lock ---
 	w.mutex.Unlock()
+}
+
+// resetPlayerCharacter resets a player character's state when entering the game
+// This is equivalent to the reset_char function in original DikuMUD
+func (w *World) resetPlayerCharacter(ch *types.Character) {
+	// Clear fighting state
+	ch.Fighting = nil
+
+	// Reset position to standing (most important fix)
+	ch.Position = types.POS_STANDING
+
+	// Ensure minimum hit points, mana, and movement (like original DikuMUD)
+	if ch.HP <= 0 {
+		ch.HP = 1
+	}
+	if ch.ManaPoints <= 0 {
+		ch.ManaPoints = 1
+	}
+	if ch.MovePoints <= 0 {
+		ch.MovePoints = 1
+	}
+
+	// Clear any temporary combat-related state
+	// Note: We don't clear equipment or inventory like the original,
+	// since that's handled separately by load_char_objs in DikuMUD
+
+	log.Printf("Reset player character %s: Position=%d, HP=%d, Mana=%d, Move=%d",
+		ch.Name, ch.Position, ch.HP, ch.ManaPoints, ch.MovePoints)
 }
 
 // RemoveCharacter removes a character from the world

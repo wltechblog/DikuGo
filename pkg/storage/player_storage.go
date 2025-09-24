@@ -57,13 +57,57 @@ func (s *FilePlayerStorage) SavePlayer(player *types.Character) error {
 		player.RoomVNUM = player.InRoom.VNUM
 	}
 
-	// Create a copy of the player without the InRoom field
-	playerCopy := *player
-	playerCopy.InRoom = nil // Don't save the entire room structure
-	playerCopy.World = nil  // Don't save the world reference
+	// Create a serializable version of the player without transient fields
+	// We can't copy the struct directly due to the mutex, so we'll create a new one
+	playerData := types.Character{
+		Name:          player.Name,
+		ShortDesc:     player.ShortDesc,
+		LongDesc:      player.LongDesc,
+		Description:   player.Description,
+		Level:         player.Level,
+		Sex:           player.Sex,
+		Class:         player.Class,
+		Race:          player.Race,
+		Position:      types.POS_STANDING, // Always save as standing (will be reset on login anyway)
+		Gold:          player.Gold,
+		Experience:    player.Experience,
+		Alignment:     player.Alignment,
+		HP:            player.HP,
+		MaxHitPoints:  player.MaxHitPoints,
+		ManaPoints:    player.ManaPoints,
+		MaxManaPoints: player.MaxManaPoints,
+		MovePoints:    player.MovePoints,
+		MaxMovePoints: player.MaxMovePoints,
+		ArmorClass:    player.ArmorClass,
+		HitRoll:       player.HitRoll,
+		DamRoll:       player.DamRoll,
+		Abilities:     player.Abilities,
+		AffectedBy:    player.AffectedBy,
+		Affected:      player.Affected,
+		SavingThrow:   player.SavingThrow,
+		Conditions:    player.Conditions,
+		Skills:        player.Skills,
+		Spells:        player.Spells,
+		Equipment:     player.Equipment,
+		Inventory:     player.Inventory,
+		RoomVNUM:      player.RoomVNUM,
+		// Transient fields are excluded:
+		// InRoom, Fighting, World, Following, Followers, etc.
+		LastSkillTime: player.LastSkillTime,
+		IsNPC:         player.IsNPC,
+		ActFlags:      player.ActFlags,
+		Prototype:     player.Prototype,
+		Functions:     player.Functions,
+		LastLogin:     player.LastLogin,
+		Password:      player.Password,
+		Title:         player.Title,
+		Prompt:        player.Prompt,
+		Flags:         player.Flags,
+		Messages:      player.Messages,
+	}
 
 	// Marshal the player to JSON
-	data, err := json.MarshalIndent(playerCopy, "", "  ")
+	data, err := json.MarshalIndent(playerData, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal player: %w", err)
 	}
