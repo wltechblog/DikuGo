@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -14,6 +15,31 @@ import (
 	"github.com/wltechblog/DikuGo/pkg/config"
 	"github.com/wltechblog/DikuGo/pkg/game"
 )
+
+// writeStackTrace writes a stack trace to a file with timestamp
+func writeStackTrace() {
+	filename := fmt.Sprintf("stacktrace_%d.txt", time.Now().Unix())
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Printf("Failed to create stack trace file %s: %v", filename, err)
+		return
+	}
+	defer file.Close()
+
+	// Write header with timestamp
+	fmt.Fprintf(file, "Stack trace generated at: %s\n", time.Now().Format(time.RFC3339))
+	fmt.Fprintf(file, "Process ID: %d\n", os.Getpid())
+	fmt.Fprintf(file, "Number of goroutines: %d\n\n", runtime.NumGoroutine())
+
+	// Get stack trace for all goroutines
+	buf := make([]byte, 1024*1024) // 1MB buffer
+	stackSize := runtime.Stack(buf, true)
+
+	fmt.Fprintf(file, "=== FULL STACK TRACE ===\n")
+	file.Write(buf[:stackSize])
+
+	log.Printf("Stack trace written to %s", filename)
+}
 
 func main() {
 	// No need to initialize random number generator in Go 1.20+
@@ -46,9 +72,9 @@ func main() {
 		return
 	}
 
-	// Set up signal handling for graceful shutdown
+	// Set up signal handling for graceful shutdown and stack traces
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
 
 	// Use a WaitGroup to track when the game has fully started
 	var wg sync.WaitGroup
@@ -68,13 +94,31 @@ func main() {
 		}
 	}()
 
-	// Wait for a signal or context cancellation
-	select {
-	case sig := <-sigChan:
-		fmt.Printf("Received signal: %v\n", sig)
-	case <-ctx.Done():
-		fmt.Println("Context canceled, shutting down")
+	// Wait for signals or context cancellation
+	for {
+		select {
+		case sig := <-sigChan:
+			switch sig {
+			case syscall.SIGUSR1:
+				fmt.Println("Received USR1 signal, writing stack trace...")
+				writeStackTrace()
+				// Continue running after writing stack trace
+				continue
+			case syscall.SIGINT, syscall.SIGTERM:
+				fmt.Printf("Received shutdown signal: %v\n", sig)
+				// Break out of loop to start shutdown
+				goto shutdown
+			default:
+				fmt.Printf("Received unexpected signal: %v\n", sig)
+				continue
+			}
+		case <-ctx.Done():
+			fmt.Println("Context canceled, shutting down")
+			goto shutdown
+		}
 	}
+
+shutdown:
 
 	// Graceful shutdown with timeout
 	fmt.Println("Shutting down...")

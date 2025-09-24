@@ -32,6 +32,10 @@ func (c *LookCommand) lookAtRoom(character *types.Character) error {
 	// Get the room
 	room := character.InRoom
 
+	// Lock the room to safely read its contents
+	room.RLock()
+	defer room.RUnlock()
+
 	// Build the room description
 	var sb strings.Builder
 
@@ -64,7 +68,7 @@ func (c *LookCommand) lookAtRoom(character *types.Character) error {
 	}
 	sb.WriteString("\r\n")
 
-	// Characters in the room
+	// Characters in the room (safely read while holding read lock)
 	for _, ch := range room.Characters {
 		if ch != character {
 			if ch.IsNPC {
@@ -75,7 +79,7 @@ func (c *LookCommand) lookAtRoom(character *types.Character) error {
 		}
 	}
 
-	// Objects in the room
+	// Objects in the room (safely read while holding read lock)
 	for _, obj := range room.Objects {
 		sb.WriteString(fmt.Sprintf("%s is here.\r\n", obj.Prototype.ShortDesc))
 	}
@@ -108,6 +112,10 @@ func (c *LookCommand) lookAtTarget(character *types.Character, target string) er
 		// Looking inside a container
 		return c.lookInContainer(character, parts[1])
 	}
+
+	// Lock the room to safely read its contents
+	room.RLock()
+	defer room.RUnlock()
 
 	// Check if the target is a character in the room
 	for _, ch := range room.Characters {

@@ -467,7 +467,12 @@ func (w *World) SaveCharacter(character *types.Character) error {
 	if character.InRoom != nil {
 		character.RoomVNUM = character.InRoom.VNUM
 	} else {
-		character.RoomVNUM = 0 // Or appropriate value for "not in a room"
+		// Only set RoomVNUM to 0 if it's not already -1 (new character)
+		// This preserves the -1 value for new characters who haven't been placed yet
+		if character.RoomVNUM != -1 {
+			character.RoomVNUM = 0 // Character was in a room but is now out of world
+		}
+		// If RoomVNUM is -1, leave it as -1 (new character, will be placed in default room)
 	}
 
 	// Save the character to storage

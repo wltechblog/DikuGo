@@ -71,6 +71,10 @@ func (c *MovementCommand) Execute(character *types.Character, args string) error
 	// Show the new room to the character
 	var sb strings.Builder
 
+	// Lock the destination room to safely read its contents
+	destRoom.RLock()
+	defer destRoom.RUnlock()
+
 	// Room name
 	sb.WriteString(fmt.Sprintf("\r\n%s\r\n", destRoom.Name))
 
@@ -93,14 +97,14 @@ func (c *MovementCommand) Execute(character *types.Character, args string) error
 	}
 	sb.WriteString("\r\n")
 
-	// Characters in the room
+	// Characters in the room (safely read while holding read lock)
 	for _, ch := range destRoom.Characters {
 		if ch != character {
 			sb.WriteString(fmt.Sprintf("%s is here.\r\n", ch.ShortDesc))
 		}
 	}
 
-	// Objects in the room
+	// Objects in the room (safely read while holding read lock)
 	for _, obj := range destRoom.Objects {
 		sb.WriteString(fmt.Sprintf("%s is here.\r\n", obj.Prototype.ShortDesc))
 	}
