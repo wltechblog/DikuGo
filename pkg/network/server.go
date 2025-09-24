@@ -152,11 +152,18 @@ func (s *Server) Shutdown() error {
 	// Close all client connections
 	log.Printf("Closing %d client connections...", len(s.clients))
 	s.mutex.Lock()
+	clientCount := len(s.clients)
 	for _, client := range s.clients {
 		client.Close()
 	}
 	s.clients = make(map[string]*Client) // Clear the map
 	s.mutex.Unlock()
+
+	// Give clients time to finish their cleanup
+	if clientCount > 0 {
+		log.Printf("Waiting for %d client connections to finish cleanup...", clientCount)
+		time.Sleep(1 * time.Second)
+	}
 
 	log.Println("Network server shutdown complete")
 	return nil

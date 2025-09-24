@@ -57,6 +57,7 @@ type Client struct {
 	LoginTime       time.Time
 	Closed          bool
 	CommandRegistry *command.Registry
+	shutdownCh      chan struct{} // Channel to signal shutdown
 }
 
 // NewClient creates a new client instance
@@ -73,6 +74,7 @@ func NewClient(conn net.Conn, w *world.World, cmdRegistry *command.Registry) *Cl
 		LoginTime:       time.Now(),
 		Closed:          false,
 		CommandRegistry: cmdRegistry,
+		shutdownCh:      make(chan struct{}),
 	}
 }
 
@@ -86,47 +88,67 @@ func (c *Client) Handle() {
 
 	// Main loop
 	for !c.Closed {
-		// Read input
-		input, err := c.Read()
-		if err != nil {
-			log.Printf("Error reading from client %s: %v", c.ID, err)
-			break
-		}
-
-		// Update last activity
-		c.LastInput = time.Now()
-
-		// Handle input based on state
-		switch c.State {
-		case StateGetName:
-			c.HandleGetName(input)
-		case StateGetPassword:
-			c.HandleGetPassword(input)
-		case StateConfirmPassword:
-			c.HandleConfirmPassword(input)
-		case StateGetNewPassword:
-			c.HandleGetNewPassword(input)
-		case StateConfirmNewPassword:
-			c.HandleConfirmNewPassword(input)
-		case StateGetClass:
-			c.HandleGetClass(input)
-		case StateMainMenu:
-			c.HandleMainMenu(input)
-		case StateReadMOTD:
-			c.HandleReadMOTD(input)
-		case StateChangePassword:
-			c.HandleChangePassword(input)
-		case StateConfirmNewPasswordChange:
-			c.HandleConfirmNewPasswordChange(input)
-		case StateReadStory:
-			c.HandleReadStory(input)
-		case StateDeleteCharacter:
-			c.HandleDeleteCharacter(input)
-		case StatePlaying:
-			c.HandleCommand(input)
+		// Use a select statement to handle both input and shutdown signals
+		select {
+		case <-c.shutdownCh:
+			// Shutdown signal received
+			log.Printf("Client %s received shutdown signal", c.ID)
+			return
 		default:
-			c.Write("Invalid state. Please try again: ")
-			c.State = StateGetName
+			// Set a read timeout to avoid blocking indefinitely
+			c.Conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+
+			// Read input
+			input, err := c.Read()
+			if err != nil {
+				// Check if it's a timeout error
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					// Timeout - continue the loop to check for shutdown
+					continue
+				}
+				// Other error - client disconnected
+				log.Printf("Error reading from client %s: %v", c.ID, err)
+				break
+			}
+
+			// Clear the read deadline
+			c.Conn.SetReadDeadline(time.Time{})
+
+			// Update last activity
+			c.LastInput = time.Now()
+
+			// Handle input based on state
+			switch c.State {
+			case StateGetName:
+				c.HandleGetName(input)
+			case StateGetPassword:
+				c.HandleGetPassword(input)
+			case StateConfirmPassword:
+				c.HandleConfirmPassword(input)
+			case StateGetNewPassword:
+				c.HandleGetNewPassword(input)
+			case StateConfirmNewPassword:
+				c.HandleConfirmNewPassword(input)
+			case StateGetClass:
+				c.HandleGetClass(input)
+			case StateMainMenu:
+				c.HandleMainMenu(input)
+			case StateReadMOTD:
+				c.HandleReadMOTD(input)
+			case StateChangePassword:
+				c.HandleChangePassword(input)
+			case StateConfirmNewPasswordChange:
+				c.HandleConfirmNewPasswordChange(input)
+			case StateReadStory:
+				c.HandleReadStory(input)
+			case StateDeleteCharacter:
+				c.HandleDeleteCharacter(input)
+			case StatePlaying:
+				c.HandleCommand(input)
+			default:
+				c.Write("Invalid state. Please try again: ")
+				c.State = StateGetName
+			}
 		}
 	}
 
@@ -178,6 +200,14 @@ func (c *Client) Close() {
 
 	// Mark as closed first to prevent recursive calls
 	c.Closed = true
+
+	// Signal shutdown to the client goroutine
+	select {
+	case <-c.shutdownCh:
+		// Channel already closed
+	default:
+		close(c.shutdownCh)
+	}
 
 	// Unregister client from the client registry
 	if c.Character != nil {

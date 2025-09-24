@@ -88,7 +88,8 @@ func (g *Game) Shutdown() error {
 	close(g.shutdownCh)
 
 	// Give goroutines a moment to react to shutdown signal
-	time.Sleep(500 * time.Millisecond)
+	log.Println("Waiting for game loop to stop...")
+	time.Sleep(1 * time.Second)
 
 	// Shutdown the server
 	log.Println("Shutting down network server...")
