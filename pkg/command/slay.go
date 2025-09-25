@@ -51,32 +51,86 @@ func (c *SlayCommand) Execute(character *types.Character, args string) error {
 		}
 	}
 
-	// Store the target's current HP to calculate lethal damage
-	targetHP := target.HP
-
-	// Temporarily boost the character's damage to ensure a killing blow
-	// Store original values
-	originalDamRoll := character.DamRoll
-	originalHitRoll := character.HitRoll
-
-	// Set damage high enough to kill the target in one hit
-	// Add extra to account for armor and other damage reductions
-	character.DamRoll = targetHP + 50 // Ensure lethal damage
-	character.HitRoll = 50            // Ensure the attack hits
-
-	// Start combat using the normal combat system
+	// Start combat using the normal combat system first
 	err := c.CombatManager.StartCombat(character, target)
-
-	// Restore original values immediately after starting combat
-	character.DamRoll = originalDamRoll
-	character.HitRoll = originalHitRoll
-
 	if err != nil {
-		return fmt.Errorf("you slay %s with divine power!\r\n", target.ShortDesc)
+		return err
 	}
 
-	// The combat system will handle the actual damage, death, and experience awarding
+	// Now apply lethal damage directly using the combat system's damage calculation
+	// This ensures we use all the normal combat mechanics for damage, death, and experience
+
+	// Calculate lethal damage (target's current HP + a buffer to ensure death)
+	lethalDamage := target.HP + 10
+
+	// Apply the damage directly to the target
+	target.HP -= lethalDamage
+
+	// Ensure HP doesn't go below 0
+	if target.HP < 0 {
+		target.HP = 0
+	}
+
+	// Set position to dead
+	target.Position = types.POS_DEAD
+
+	// Send death messages (same as normal combat)
+	character.SendMessage(fmt.Sprintf("You have slain %s!\r\n", target.ShortDesc))
+	target.SendMessage(fmt.Sprintf("%s has slain you!\r\n", character.Name))
+
+	// Send a message to the room
+	for _, ch := range character.InRoom.Characters {
+		if ch != character && ch != target {
+			ch.SendMessage(fmt.Sprintf("%s has slain %s!\r\n", character.Name, target.ShortDesc))
+		}
+	}
+
+	// Stop combat for both characters
+	c.CombatManager.StopCombat(character)
+
+	// Handle character death using the centralized death handler
+	w, ok := target.World.(interface {
+		HandleCharacterDeath(*types.Character)
+	})
+	if ok {
+		w.HandleCharacterDeath(target)
+	}
+
+	// Award experience if target is NPC (same calculation as normal combat)
+	if target.IsNPC {
+		exp := calculateSlayExperience(character, target)
+		character.Experience += exp
+		character.SendMessage(fmt.Sprintf("You gain %d experience points.\r\n", exp))
+	}
+
 	return fmt.Errorf("you slay %s with divine power!\r\n", target.ShortDesc)
+}
+
+// calculateSlayExperience calculates the experience gained from slaying a target
+// Uses the same formula as combat but ensures a minimum reward
+func calculateSlayExperience(slayer, victim *types.Character) int {
+	// Base experience is 1/3 of the mob's experience (same as combat)
+	exp := victim.Experience / 3
+
+	// Apply level difference bonus
+	levelDiff := victim.Level - slayer.Level
+	if levelDiff > 0 {
+		// Bonus for slaying higher level mobs
+		if slayer.IsNPC {
+			// NPCs get less bonus
+			exp += (exp * levelDiff) / 8
+		} else {
+			// Players get more bonus
+			exp += (exp * levelDiff) / 4
+		}
+	}
+
+	// Ensure minimum experience (slightly higher than combat since it's an admin command)
+	if exp < 10 {
+		exp = 10
+	}
+
+	return exp
 }
 
 // Name returns the name of the command

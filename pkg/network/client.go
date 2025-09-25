@@ -108,7 +108,8 @@ func (c *Client) Handle() {
 				}
 				// Other error - client disconnected
 				log.Printf("Error reading from client %s: %v", c.ID, err)
-				break
+				c.Closed = true
+				return
 			}
 
 			// Clear the read deadline
@@ -181,14 +182,20 @@ func (c *Client) Read() (string, error) {
 
 // Write writes a message to the client
 func (c *Client) Write(message string) {
+	if c.Closed {
+		return
+	}
+
 	_, err := c.Writer.WriteString(message)
 	if err != nil {
-		log.Printf("Error writing to client: %v", err)
+		log.Printf("Error writing to client %s: %v", c.ID, err)
+		c.Closed = true
 		return
 	}
 	err = c.Writer.Flush()
 	if err != nil {
-		log.Printf("Error flushing writer: %v", err)
+		log.Printf("Error flushing writer for client %s: %v", c.ID, err)
+		c.Closed = true
 	}
 }
 

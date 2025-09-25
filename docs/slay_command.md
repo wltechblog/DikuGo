@@ -27,10 +27,10 @@ slay <target>
 
 The slay command uses the existing combat system rather than bypassing it:
 
-1. **Damage Calculation**: Temporarily boosts the attacker's `DamRoll` to `target.HP + 50`
-2. **Hit Chance**: Temporarily boosts the attacker's `HitRoll` to `50` to ensure the attack hits
-3. **Combat System**: Calls `CombatManager.StartCombat()` to initiate normal combat
-4. **Restoration**: Immediately restores original `DamRoll` and `HitRoll` values
+1. **Combat Initiation**: Calls `CombatManager.StartCombat()` to set up normal combat state
+2. **Lethal Damage**: Applies `target.HP + 10` damage directly to ensure instant death
+3. **Death Processing**: Uses the standard `HandleCharacterDeath()` function
+4. **Experience Award**: Uses the same experience calculation as normal combat
 
 ### 2. Experience and Death Handling
 
@@ -42,20 +42,23 @@ The slay command uses the existing combat system rather than bypassing it:
 ### 3. Combat Flow
 
 ```go
-// Store original values
-originalDamRoll := character.DamRoll
-originalHitRoll := character.HitRoll
+// Start combat using normal combat system
+err := CombatManager.StartCombat(character, target)
 
-// Boost damage to ensure kill
-character.DamRoll = targetHP + 50  // Lethal damage
-character.HitRoll = 50             // Ensure hit
+// Apply lethal damage directly
+lethalDamage := target.HP + 10
+target.HP -= lethalDamage
+target.Position = types.POS_DEAD
 
-// Use normal combat system
-CombatManager.StartCombat(character, target)
+// Stop combat and handle death
+CombatManager.StopCombat(character)
+HandleCharacterDeath(target)
 
-// Restore original values
-character.DamRoll = originalDamRoll
-character.HitRoll = originalHitRoll
+// Award experience using normal calculation
+if target.IsNPC {
+    exp := calculateSlayExperience(character, target)
+    character.Experience += exp
+}
 ```
 
 ## Error Handling
