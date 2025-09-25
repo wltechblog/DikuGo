@@ -10,6 +10,75 @@ import (
 	"github.com/wltechblog/DikuGo/pkg/types"
 )
 
+// createSafeObjectCopy creates a copy of an ObjectInstance without circular references
+func createSafeObjectCopy(original *types.ObjectInstance) *types.ObjectInstance {
+	if original == nil {
+		return nil
+	}
+
+	// Create a safe copy without circular references
+	safeCopy := &types.ObjectInstance{
+		Prototype:  original.Prototype, // Keep prototype reference (not circular)
+		WornOn:     original.WornOn,
+		Timer:      original.Timer,
+		Value:      original.Value,
+		Affects:    original.Affects,
+		CustomDesc: original.CustomDesc,
+		ExtraDescs: original.ExtraDescs,
+		// Exclude circular reference fields:
+		// InRoom, CarriedBy, WornBy, InObj, Contains
+	}
+
+	// Recursively copy contained items (but break the circular reference chain)
+	if len(original.Contains) > 0 {
+		safeCopy.Contains = make([]*types.ObjectInstance, len(original.Contains))
+		for i, containedItem := range original.Contains {
+			if containedItem != nil {
+				// Create a safe copy of contained item without setting InObj back-reference
+				containedCopy := createSafeObjectCopy(containedItem)
+				safeCopy.Contains[i] = containedCopy
+			}
+		}
+	}
+
+	return safeCopy
+}
+
+// restoreObjectRelationships restores the circular references in objects after loading
+func restoreObjectRelationships(player *types.Character) {
+	// Restore equipment relationships
+	for i, item := range player.Equipment {
+		if item != nil {
+			item.CarriedBy = player
+			item.WornBy = player
+			item.WornOn = i
+			restoreContainerRelationships(item)
+		}
+	}
+
+	// Restore inventory relationships
+	for _, item := range player.Inventory {
+		if item != nil {
+			item.CarriedBy = player
+			restoreContainerRelationships(item)
+		}
+	}
+}
+
+// restoreContainerRelationships recursively restores container relationships
+func restoreContainerRelationships(container *types.ObjectInstance) {
+	for _, containedItem := range container.Contains {
+		if containedItem != nil {
+			containedItem.InObj = container
+			containedItem.CarriedBy = nil // Items in containers are not carried directly
+			containedItem.WornBy = nil    // Items in containers are not worn
+			containedItem.WornOn = -1
+			// Recursively restore nested containers
+			restoreContainerRelationships(containedItem)
+		}
+	}
+}
+
 // PlayerStorage is an interface for storing and retrieving player data
 type PlayerStorage interface {
 	// SavePlayer saves a player to storage
@@ -57,6 +126,21 @@ func (s *FilePlayerStorage) SavePlayer(player *types.Character) error {
 		player.RoomVNUM = player.InRoom.VNUM
 	}
 
+	// Create serializable copies of equipment and inventory without circular references
+	safeEquipment := make([]*types.ObjectInstance, len(player.Equipment))
+	for i, item := range player.Equipment {
+		if item != nil {
+			safeEquipment[i] = createSafeObjectCopy(item)
+		}
+	}
+
+	safeInventory := make([]*types.ObjectInstance, len(player.Inventory))
+	for i, item := range player.Inventory {
+		if item != nil {
+			safeInventory[i] = createSafeObjectCopy(item)
+		}
+	}
+
 	// Create a serializable version of the player without transient fields
 	// We can't copy the struct directly due to the mutex, so we'll create a new one
 	playerData := types.Character{
@@ -88,8 +172,8 @@ func (s *FilePlayerStorage) SavePlayer(player *types.Character) error {
 		Conditions:    player.Conditions,
 		Skills:        player.Skills,
 		Spells:        player.Spells,
-		Equipment:     player.Equipment,
-		Inventory:     player.Inventory,
+		Equipment:     safeEquipment, // Use safe copies without circular references
+		Inventory:     safeInventory, // Use safe copies without circular references
 		RoomVNUM:      player.RoomVNUM,
 		// Transient fields are excluded:
 		// InRoom, Fighting, World, Following, Followers, etc.
@@ -143,6 +227,9 @@ func (s *FilePlayerStorage) LoadPlayer(name string) (*types.Character, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal player: %w", err)
 	}
+
+	// Restore object relationships after loading
+	restoreObjectRelationships(&player)
 
 	// Note: The InRoom field will be set by the World.AddCharacter method
 	// based on the RoomVNUM value
