@@ -52,9 +52,9 @@ func (c *LookCommand) lookAtRoom(character *types.Character) error {
 	for dir := 0; dir < 6; dir++ {
 		exit := room.Exits[dir]
 		if exit != nil {
-			log.Printf("Look: Room %d, Exit direction %d, DestVnum: %d", room.VNUM, dir, exit.DestVnum)
-			// Show all exits with valid destination rooms
-			if exit.DestVnum != -1 {
+			log.Printf("Look: Room %d, Exit direction %d, DestVnum: %d, Flags: %d", room.VNUM, dir, exit.DestVnum, exit.Flags)
+			// Only show exits that are not closed doors (following original DikuMUD behavior)
+			if exit.DestVnum != -1 && !exit.IsClosed() {
 				exits = append(exits, directionName(dir))
 			}
 		} else {

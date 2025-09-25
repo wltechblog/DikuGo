@@ -2,7 +2,7 @@
 
 ## Overview
 
-I have implemented the `open` and `close` commands following the original DikuMUD mechanics exactly. These commands work on both containers (held or in room) and doors/exits, with proper state management and two-way door synchronization.
+I have implemented the `open` and `close` commands following the original DikuMUD mechanics exactly. These commands work on both containers (held or in room) and doors/exits, with proper state management, two-way door synchronization, and correct exit visibility handling.
 
 ## Commands Implemented
 
@@ -274,31 +274,58 @@ I see no nonexistent here.
 Open what?
 ```
 
+## Key Fixes Applied
+
+### 🔧 **Exit Visibility Fix**
+Fixed the room display to only show exits that are not closed doors, following the original DikuMUD behavior:
+- **Before**: All exits were shown regardless of door state
+- **After**: Only open exits are displayed in room descriptions
+- **Implementation**: Added `!exit.IsClosed()` check in look and movement commands
+
+### 🎯 **Argument Parsing Fix**
+Implemented proper argument parsing following the original DikuMUD `argument_interpreter` logic:
+- **Object Search**: Uses full argument string for container finding (like `generic_find`)
+- **Door Search**: Parses arguments into object name and direction
+- **Fill Word Handling**: Skips words like "the", "a", "an", "to", "from", etc.
+- **Direction Support**: Properly handles "door north", "gate west", etc.
+
+### 🚪 **Door Keyword Matching**
+Enhanced door finding to match original DikuMUD `find_door` and `isname` functions:
+- **Keyword Matching**: Supports multiple keywords per door
+- **Prefix Matching**: Allows partial keyword matches
+- **Direction Priority**: When direction specified, checks that specific exit first
+- **Fallback Logic**: Searches all exits when no direction given
+
 ## Benefits
 
 ### ✅ **Complete DikuMUD Compatibility**
 - Exact behavior match with original C implementation
 - Same message format and error handling
 - Identical flag operations and state management
+- Proper exit visibility in room descriptions
 
 ### ✅ **Robust Implementation**
 - Comprehensive error handling and validation
 - Safe bitwise flag operations
 - Proper two-way door synchronization
+- Correct argument parsing with fill word handling
 
 ### ✅ **Flexible Usage**
 - Works with containers in inventory or room
 - Supports door keywords and directions
 - Case-insensitive and partial name matching
+- Handles complex argument formats
 
 ### ✅ **Thorough Testing**
-- 16+ unit tests covering all scenarios
+- 19+ unit tests covering all scenarios
 - Container and door functionality verified
 - Edge cases and error conditions tested
+- Argument parsing and keyword matching validated
 
 ### ✅ **Clean Integration**
 - Uses existing type system and constants
 - Follows established DikuGo patterns
 - Minimal dependencies and clean interfaces
+- Proper integration with room display system
 
-The open and close commands are now fully functional and provide an authentic DikuMUD experience with proper container and door mechanics, state validation, and automatic door synchronization!
+The open and close commands are now fully functional and provide an authentic DikuMUD experience with proper container and door mechanics, state validation, automatic door synchronization, and correct exit visibility!

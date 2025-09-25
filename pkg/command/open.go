@@ -22,23 +22,16 @@ func (c *OpenCommand) Execute(character *types.Character, args string) error {
 		return fmt.Errorf("you are not in a room")
 	}
 
-	// Parse arguments - could be "door", "chest", "door north", etc.
-	parts := strings.Fields(strings.ToLower(strings.TrimSpace(args)))
-	if len(parts) == 0 {
-		return fmt.Errorf("open what?")
-	}
-
-	objectName := parts[0]
-	var direction string
-	if len(parts) > 1 {
-		direction = parts[1]
-	}
-
-	// First try to find an object (container) in inventory or room
-	targetObject := c.findObject(character, objectName)
+	// First try to find an object (container) using the entire argument string
+	// This matches the original DikuMUD behavior of using generic_find with the full argument
+	targetObject := c.findObject(character, strings.TrimSpace(strings.ToLower(args)))
 	if targetObject != nil {
 		return c.openContainer(character, targetObject)
 	}
+
+	// Parse arguments using DikuMUD's argument_interpreter logic for door finding
+	// This splits the argument into two parts: object/door name and direction
+	objectName, direction := c.argumentInterpreter(args)
 
 	// If no object found, try to find a door/exit
 	exitDir := c.findDoor(character, objectName, direction)
@@ -48,6 +41,60 @@ func (c *OpenCommand) Execute(character *types.Character, args string) error {
 
 	// Nothing found
 	return fmt.Errorf("I see no %s here.", objectName)
+}
+
+// argumentInterpreter splits arguments like the original DikuMUD argument_interpreter
+func (c *OpenCommand) argumentInterpreter(args string) (string, string) {
+	// Trim and convert to lowercase
+	args = strings.TrimSpace(strings.ToLower(args))
+	if args == "" {
+		return "", ""
+	}
+
+	// Split into words
+	words := strings.Fields(args)
+	if len(words) == 0 {
+		return "", ""
+	}
+
+	// Find the first non-fill word for the first argument
+	firstArg := ""
+	firstIndex := 0
+	for i, word := range words {
+		if !c.isFillWord(word) {
+			firstArg = word
+			firstIndex = i
+			break
+		}
+	}
+
+	// If we didn't find a non-fill word, use the first word
+	if firstArg == "" && len(words) > 0 {
+		firstArg = words[0]
+		firstIndex = 0
+	}
+
+	// Find the second non-fill word for the second argument
+	secondArg := ""
+	for i := firstIndex + 1; i < len(words); i++ {
+		if !c.isFillWord(words[i]) {
+			secondArg = words[i]
+			break
+		}
+	}
+
+	return firstArg, secondArg
+}
+
+// isFillWord checks if a word is a fill word that should be ignored
+func (c *OpenCommand) isFillWord(word string) bool {
+	fillWords := []string{"the", "a", "an", "in", "on", "at", "to", "from", "with", "by"}
+	for _, fillWord := range fillWords {
+		if word == fillWord {
+			return true
+		}
+	}
+	return false
 }
 
 // findObject looks for an object in inventory and room
@@ -75,38 +122,74 @@ func (c *OpenCommand) matchesName(obj *types.ObjectInstance, name string) bool {
 		strings.Contains(strings.ToLower(obj.Prototype.ShortDesc), name)
 }
 
-// findDoor looks for a door/exit by name and optional direction
+// findDoor looks for a door/exit by name and optional direction (following original DikuMUD logic)
 func (c *OpenCommand) findDoor(character *types.Character, doorName string, direction string) int {
 	// If a direction was specified, check that specific exit
 	if direction != "" {
 		exitDir := c.parseDirection(direction)
-		if exitDir >= 0 && exitDir < 6 {
-			exit := character.InRoom.Exits[exitDir]
-			if exit != nil && c.matchesDoorName(exit, doorName) {
+		if exitDir < 0 || exitDir >= 6 {
+			// Invalid direction
+			return -1
+		}
+
+		exit := character.InRoom.Exits[exitDir]
+		if exit == nil {
+			// No exit in that direction
+			return -1
+		}
+
+		// If the exit has keywords, check if doorName matches
+		if exit.Keywords != "" {
+			if c.isName(doorName, exit.Keywords) {
 				return exitDir
 			}
+			// Door exists but name doesn't match
+			return -1
+		} else {
+			// No keywords, so any door name matches this exit
+			return exitDir
 		}
-		return -1
 	}
 
 	// No direction specified, search all exits for matching keyword
 	for dir := 0; dir < 6; dir++ {
 		exit := character.InRoom.Exits[dir]
-		if exit != nil && c.matchesDoorName(exit, doorName) {
-			return dir
+		if exit != nil && exit.Keywords != "" {
+			if c.isName(doorName, exit.Keywords) {
+				return dir
+			}
 		}
 	}
 
 	return -1
 }
 
-// matchesDoorName checks if an exit matches the given door name
+// isName checks if a name matches any of the keywords (following original DikuMUD isname function)
+func (c *OpenCommand) isName(name string, keywords string) bool {
+	if keywords == "" {
+		return false
+	}
+
+	// Split keywords by spaces and check each one
+	keywordList := strings.Fields(strings.ToLower(keywords))
+	name = strings.ToLower(name)
+
+	for _, keyword := range keywordList {
+		// Check for exact match or if name is a prefix of keyword
+		if keyword == name || strings.HasPrefix(keyword, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesDoorName checks if an exit matches the given door name (legacy function, kept for compatibility)
 func (c *OpenCommand) matchesDoorName(exit *types.Exit, name string) bool {
 	if exit.Keywords == "" {
 		// If no keywords, match common door names
 		return name == "door"
 	}
-	return strings.Contains(strings.ToLower(exit.Keywords), name)
+	return c.isName(name, exit.Keywords)
 }
 
 // parseDirection converts direction string to direction constant

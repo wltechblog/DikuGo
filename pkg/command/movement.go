@@ -86,7 +86,7 @@ func (c *MovementCommand) Execute(character *types.Character, args string) error
 	var exits []string
 	for dir := 0; dir < 6; dir++ {
 		e := destRoom.Exits[dir]
-		if e != nil && e.DestVnum != -1 {
+		if e != nil && e.DestVnum != -1 && !e.IsClosed() {
 			exits = append(exits, directionName(dir))
 		}
 	}

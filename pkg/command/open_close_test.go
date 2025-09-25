@@ -576,3 +576,155 @@ func TestCloseCommand_DoorAlreadyClosed(t *testing.T) {
 		t.Errorf("Expected 'already closed' error, got: %v", err)
 	}
 }
+
+func TestOpenCommand_DoorWithDirection(t *testing.T) {
+	// Create a test character
+	character := &types.Character{
+		Name:     "TestPlayer",
+		Level:    5,
+		Position: types.POS_STANDING,
+	}
+
+	// Create a test room with multiple doors
+	room := &types.Room{
+		VNUM:       1001,
+		Name:       "Test Room",
+		Characters: []*types.Character{character},
+		Exits:      [6]*types.Exit{},
+	}
+	character.InRoom = room
+
+	// Create doors in multiple directions with same keyword
+	room.Exits[types.DIR_NORTH] = &types.Exit{
+		Direction:   types.DIR_NORTH,
+		Description: "A wooden gate leads north.",
+		Keywords:    "gate wooden",
+		Flags:       types.EX_ISDOOR | types.EX_CLOSED,
+		Key:         -1,
+		DestVnum:    1002,
+	}
+
+	room.Exits[types.DIR_SOUTH] = &types.Exit{
+		Direction:   types.DIR_SOUTH,
+		Description: "An iron gate leads south.",
+		Keywords:    "gate iron",
+		Flags:       types.EX_ISDOOR | types.EX_CLOSED,
+		Key:         -1,
+		DestVnum:    1003,
+	}
+
+	// Test opening specific gate by direction
+	openCmd := &OpenCommand{}
+	err := openCmd.Execute(character, "gate north")
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+
+	// Check that only the north gate is open
+	if (room.Exits[types.DIR_NORTH].Flags & types.EX_CLOSED) != 0 {
+		t.Error("Expected north gate to be open, but CLOSED flag is still set")
+	}
+	if (room.Exits[types.DIR_SOUTH].Flags & types.EX_CLOSED) == 0 {
+		t.Error("Expected south gate to remain closed, but CLOSED flag was removed")
+	}
+}
+
+func TestOpenCommand_KeywordMatching(t *testing.T) {
+	// Create a test character
+	character := &types.Character{
+		Name:     "TestPlayer",
+		Level:    5,
+		Position: types.POS_STANDING,
+	}
+
+	// Create a test room with a door with multiple keywords
+	room := &types.Room{
+		VNUM:       1001,
+		Name:       "Test Room",
+		Characters: []*types.Character{character},
+		Exits:      [6]*types.Exit{},
+	}
+	character.InRoom = room
+
+	// Create a door with multiple keywords
+	room.Exits[types.DIR_EAST] = &types.Exit{
+		Direction:   types.DIR_EAST,
+		Description: "A heavy wooden door with iron hinges leads east.",
+		Keywords:    "door wooden heavy iron",
+		Flags:       types.EX_ISDOOR | types.EX_CLOSED,
+		Key:         -1,
+		DestVnum:    1002,
+	}
+
+	// Test opening with different keyword matches
+	testCases := []string{"door", "wooden", "heavy", "iron"}
+
+	for i, keyword := range testCases {
+		// Reset door to closed state
+		room.Exits[types.DIR_EAST].Flags |= types.EX_CLOSED
+
+		openCmd := &OpenCommand{}
+		err := openCmd.Execute(character, keyword)
+		if err != nil {
+			t.Errorf("Test case %d: Expected no error for keyword '%s', got: %v", i, keyword, err)
+		}
+
+		// Check that the door is open
+		if (room.Exits[types.DIR_EAST].Flags & types.EX_CLOSED) != 0 {
+			t.Errorf("Test case %d: Expected door to be open for keyword '%s', but CLOSED flag is still set", i, keyword)
+		}
+	}
+}
+
+func TestOpenCommand_ArgumentParsing(t *testing.T) {
+	// Create a test character
+	character := &types.Character{
+		Name:     "TestPlayer",
+		Level:    5,
+		Position: types.POS_STANDING,
+	}
+
+	// Create a test room
+	room := &types.Room{
+		VNUM:       1001,
+		Name:       "Test Room",
+		Characters: []*types.Character{character},
+		Exits:      [6]*types.Exit{},
+	}
+	character.InRoom = room
+
+	// Create a door
+	room.Exits[types.DIR_WEST] = &types.Exit{
+		Direction:   types.DIR_WEST,
+		Description: "A large gate leads west.",
+		Keywords:    "gate large",
+		Flags:       types.EX_ISDOOR | types.EX_CLOSED,
+		Key:         -1,
+		DestVnum:    1002,
+	}
+
+	// Test various argument formats with fill words
+	testCases := []string{
+		"gate west",
+		"the gate west",
+		"a gate west",
+		"gate to the west",
+		"large west", // This should work since "large" is in the keywords
+	}
+
+	for i, args := range testCases {
+		// Reset door to closed state
+		room.Exits[types.DIR_WEST].Flags |= types.EX_CLOSED
+
+		openCmd := &OpenCommand{}
+		err := openCmd.Execute(character, args)
+		if err != nil {
+			t.Errorf("Test case %d: Expected no error for args '%s', got: %v", i, args, err)
+		}
+
+		// Check that the door is open
+		if (room.Exits[types.DIR_WEST].Flags & types.EX_CLOSED) != 0 {
+			t.Errorf("Test case %d: Expected door to be open for args '%s', but CLOSED flag is still set", i, args)
+		}
+	}
+}
