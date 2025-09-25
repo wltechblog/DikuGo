@@ -33,6 +33,7 @@ func InitRegistry(w *world.World, combatManager CombatManagerInterface) *Registr
 	// Register magic commands
 	registry.Register(&CastCommand{World: w})
 	registry.Register(&QuaffCommand{World: w})
+	registry.Register(&DrinkCommand{})
 	registry.Register(&ReciteCommand{World: w})
 	registry.Register(&UseCommand{World: w})
 

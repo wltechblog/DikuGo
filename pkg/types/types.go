@@ -88,6 +88,7 @@ type ObjectInstance struct {
 	InObj     *ObjectInstance
 	Contains  []*ObjectInstance
 	Timer     int
+	Value     [4]int // Instance-specific values (overrides prototype if set)
 	Affects   [MAX_OBJ_AFFECT]struct {
 		Location int
 		Modifier int
@@ -179,6 +180,7 @@ type Character struct {
 	LastSkillTime map[int]time.Time // Last time a skill was used
 	Following     *Character
 	Followers     []*Character
+	Master        *Character // For pets/followers
 	IsNPC         bool
 	ActFlags      uint32                          // NPC behavior flags
 	Prototype     *Mobile                         // If NPC

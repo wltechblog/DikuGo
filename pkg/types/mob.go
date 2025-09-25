@@ -10,6 +10,7 @@ const (
 	ACT_AGGRESSIVE = (1 << 5) // Set if automatic attack on NPCs
 	ACT_STAY_ZONE  = (1 << 6) // MOB Must stay inside its own zone
 	ACT_WIMPY      = (1 << 7) // MOB Will flee when injured, and if aggressive only attack sleeping players
+	ACT_FOLLOWER   = (1 << 8) // MOB is a follower/pet
 )
 
 // Mobile-related constants

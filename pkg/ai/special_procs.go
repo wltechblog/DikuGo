@@ -9,16 +9,18 @@ import (
 
 // SpecialProcs is a map of special procedure names to functions
 var SpecialProcs = map[string]func(*types.Character, string) bool{
-	"cityguard":     cityguardProc,
-	"shopkeeper":    shopkeeperProc,
-	"thief":         thiefProc,
-	"magic_user":    magicUserProc,
-	"snake":         snakeProc,
-	"fido":          fidoProc,
-	"janitor":       janitorProc,
-	"guild_guard":   guildGuardProc,
-	"receptionist":  receptionistProc,
-	"mayor":         mayorProc,
+	"cityguard":    cityguardProc,
+	"shopkeeper":   shopkeeperProc,
+	"thief":        thiefProc,
+	"magic_user":   magicUserProc,
+	"snake":        snakeProc,
+	"fido":         fidoProc,
+	"janitor":      janitorProc,
+	"guild_guard":  guildGuardProc,
+	"receptionist": receptionistProc,
+	"mayor":        mayorProc,
+	"pet_shop":     petShopProc,
+	"petshop":      petShopProc,
 }
 
 // cityguardProc is the special procedure for cityguards

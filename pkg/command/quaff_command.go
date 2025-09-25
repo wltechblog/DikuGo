@@ -22,7 +22,7 @@ func (c *QuaffCommand) Name() string {
 
 // Aliases returns the aliases of the command
 func (c *QuaffCommand) Aliases() []string {
-	return []string{"drink"}
+	return []string{}
 }
 
 // MinPosition returns the minimum position required to execute the command

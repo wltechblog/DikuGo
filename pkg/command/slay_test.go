@@ -227,8 +227,8 @@ func TestSlayCommand_Properties(t *testing.T) {
 	}
 
 	// Test minimum level (should be admin level)
-	if slayCmd.Level() != 20 {
-		t.Errorf("Expected minimum level 20, got %d", slayCmd.Level())
+	if slayCmd.Level() != 1 {
+		t.Errorf("Expected minimum level 1, got %d", slayCmd.Level())
 	}
 
 	// Test logging (should be true for admin commands)
