@@ -401,9 +401,96 @@ func (w *World) resetPutObject(objVnum, containerVnum, maxExisting int) {
 	// TODO: Implement
 }
 
-// resetDoor sets the state of a door
+// resetDoor sets the state of a door following original DikuMUD logic
 func (w *World) resetDoor(roomVnum, direction, state int) {
-	// TODO: Implement
+	// Get the room directly (we already have a lock)
+	room := w.rooms[roomVnum]
+	if room == nil {
+		log.Printf("Warning: Room %d not found for door reset", roomVnum)
+		return
+	}
+
+	// Validate direction
+	if direction < 0 || direction >= 6 {
+		log.Printf("Warning: Invalid direction %d for door reset in room %d", direction, roomVnum)
+		return
+	}
+
+	// Get the exit
+	exit := room.Exits[direction]
+	if exit == nil {
+		log.Printf("Warning: No exit in direction %d for door reset in room %d", direction, roomVnum)
+		return
+	}
+
+	// Check if it's actually a door
+	if (exit.Flags & types.EX_ISDOOR) == 0 {
+		log.Printf("Warning: Exit in direction %d in room %d is not a door", direction, roomVnum)
+		return
+	}
+
+	// Set door state following original DikuMUD logic:
+	// state 0 = open (remove CLOSED and LOCKED)
+	// state 1 = closed (set CLOSED, remove LOCKED)
+	// state 2 = locked (set CLOSED and LOCKED)
+	switch state {
+	case 0: // Open
+		exit.Flags &^= types.EX_CLOSED
+		exit.Flags &^= types.EX_LOCKED
+		log.Printf("Zone reset: Opened door in room %d direction %d", roomVnum, direction)
+	case 1: // Closed
+		exit.Flags |= types.EX_CLOSED
+		exit.Flags &^= types.EX_LOCKED
+		log.Printf("Zone reset: Closed door in room %d direction %d", roomVnum, direction)
+	case 2: // Locked
+		exit.Flags |= types.EX_CLOSED
+		exit.Flags |= types.EX_LOCKED
+		log.Printf("Zone reset: Locked door in room %d direction %d", roomVnum, direction)
+	default:
+		log.Printf("Warning: Invalid door state %d for room %d direction %d", state, roomVnum, direction)
+	}
+
+	// Also set the state on the other side of the door if it exists
+	if exit.DestVnum > 0 {
+		destRoom := w.rooms[exit.DestVnum]
+		if destRoom != nil {
+			// Find the reverse direction
+			reverseDir := -1
+			switch direction {
+			case types.DIR_NORTH:
+				reverseDir = types.DIR_SOUTH
+			case types.DIR_SOUTH:
+				reverseDir = types.DIR_NORTH
+			case types.DIR_EAST:
+				reverseDir = types.DIR_WEST
+			case types.DIR_WEST:
+				reverseDir = types.DIR_EAST
+			case types.DIR_UP:
+				reverseDir = types.DIR_DOWN
+			case types.DIR_DOWN:
+				reverseDir = types.DIR_UP
+			}
+
+			if reverseDir >= 0 && destRoom.Exits[reverseDir] != nil {
+				reverseExit := destRoom.Exits[reverseDir]
+				if (reverseExit.Flags & types.EX_ISDOOR) != 0 {
+					// Apply the same state to the reverse exit
+					switch state {
+					case 0: // Open
+						reverseExit.Flags &^= types.EX_CLOSED
+						reverseExit.Flags &^= types.EX_LOCKED
+					case 1: // Closed
+						reverseExit.Flags |= types.EX_CLOSED
+						reverseExit.Flags &^= types.EX_LOCKED
+					case 2: // Locked
+						reverseExit.Flags |= types.EX_CLOSED
+						reverseExit.Flags |= types.EX_LOCKED
+					}
+					log.Printf("Zone reset: Set reverse door state in room %d direction %d", exit.DestVnum, reverseDir)
+				}
+			}
+		}
+	}
 }
 
 // resetRemoveObject removes an object from a room

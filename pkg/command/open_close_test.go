@@ -728,3 +728,109 @@ func TestOpenCommand_ArgumentParsing(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenCommand_NonDoorExit(t *testing.T) {
+	// Create a test character
+	character := &types.Character{
+		Name:     "TestPlayer",
+		Level:    5,
+		Position: types.POS_STANDING,
+	}
+
+	// Create a test room with a regular exit (not a door)
+	room := &types.Room{
+		VNUM:       1001,
+		Name:       "Test Room",
+		Characters: []*types.Character{character},
+		Exits:      [6]*types.Exit{},
+	}
+	character.InRoom = room
+
+	// Create a regular exit (no EX_ISDOOR flag)
+	room.Exits[types.DIR_NORTH] = &types.Exit{
+		Direction:   types.DIR_NORTH,
+		Description: "A path leads north.",
+		Keywords:    "",
+		Flags:       0, // No door flags
+		Key:         -1,
+		DestVnum:    1002,
+	}
+
+	// Test opening a non-door exit
+	openCmd := &OpenCommand{}
+	err := openCmd.Execute(character, "door north")
+	if err == nil || (!strings.Contains(err.Error(), "absurd") && !strings.Contains(err.Error(), "impossible")) {
+		t.Errorf("Expected 'absurd' or 'impossible' error for non-door exit, got: %v", err)
+	}
+}
+
+func TestOpenCommand_DoorFlags(t *testing.T) {
+	// Create a test character
+	character := &types.Character{
+		Name:     "TestPlayer",
+		Level:    5,
+		Position: types.POS_STANDING,
+	}
+
+	// Create a test room
+	room := &types.Room{
+		VNUM:       1001,
+		Name:       "Test Room",
+		Characters: []*types.Character{character},
+		Exits:      [6]*types.Exit{},
+	}
+	character.InRoom = room
+
+	// Test different door flag combinations
+	testCases := []struct {
+		name        string
+		flags       uint32
+		expectError string
+	}{
+		{
+			name:        "Regular door (closed)",
+			flags:       types.EX_ISDOOR | types.EX_CLOSED,
+			expectError: "",
+		},
+		{
+			name:        "Locked door",
+			flags:       types.EX_ISDOOR | types.EX_CLOSED | types.EX_LOCKED,
+			expectError: "locked",
+		},
+		{
+			name:        "Already open door",
+			flags:       types.EX_ISDOOR,
+			expectError: "already open",
+		},
+		{
+			name:        "Not a door",
+			flags:       0,
+			expectError: "impossible",
+		},
+	}
+
+	for i, tc := range testCases {
+		// Create exit with specific flags
+		room.Exits[types.DIR_EAST] = &types.Exit{
+			Direction:   types.DIR_EAST,
+			Description: "A door leads east.",
+			Keywords:    "door",
+			Flags:       tc.flags,
+			Key:         -1,
+			DestVnum:    1002,
+		}
+
+		openCmd := &OpenCommand{}
+		err := openCmd.Execute(character, "door east")
+
+		if tc.expectError == "" {
+			if err != nil {
+				t.Errorf("Test case %d (%s): Expected no error, got: %v", i, tc.name, err)
+			}
+		} else {
+			if err == nil || !strings.Contains(err.Error(), tc.expectError) {
+				t.Errorf("Test case %d (%s): Expected error containing '%s', got: %v", i, tc.name, tc.expectError, err)
+			}
+		}
+	}
+}

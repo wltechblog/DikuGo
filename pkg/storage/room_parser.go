@@ -210,9 +210,19 @@ func ParseRooms(filename string) ([]*types.Room, error) {
 				}
 
 				// Parse the exit flags (0 = no door, 1 = door, 2 = pickproof door)
-				exitFlags, err := strconv.Atoi(exitFlagsParts[0])
+				doorFlag, err := strconv.Atoi(exitFlagsParts[0])
 				if err != nil {
 					return nil, fmt.Errorf("invalid exit flags on line %d: %w", parser.LineNum(), err)
+				}
+
+				// Convert door flag to proper exit flags following original DikuMUD logic
+				var exitFlags uint32
+				if doorFlag == 1 {
+					exitFlags = types.EX_ISDOOR
+				} else if doorFlag == 2 {
+					exitFlags = types.EX_ISDOOR | types.EX_PICKPROOF
+				} else {
+					exitFlags = 0 // No door
 				}
 
 				// Parse the exit key (item VNUM of the key, or -1 if no key)
@@ -235,7 +245,7 @@ func ParseRooms(filename string) ([]*types.Room, error) {
 					Direction:   dir,
 					Description: exitDesc,
 					Keywords:    exitKeywords,
-					Flags:       uint32(exitFlags),
+					Flags:       exitFlags,
 					Key:         exitKey,
 					DestVnum:    destRoomVnum, // Store the destination room VNUM
 				}

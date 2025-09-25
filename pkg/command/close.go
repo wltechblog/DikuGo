@@ -39,7 +39,18 @@ func (c *CloseCommand) Execute(character *types.Character, args string) error {
 		return c.closeDoor(character, exitDir)
 	}
 
-	// Nothing found
+	// Nothing found - check if there's an exit in that direction but it's not a door
+	if direction != "" {
+		dirInt := c.parseDirection(direction)
+		if dirInt >= 0 && dirInt < 6 {
+			exit := character.InRoom.Exits[dirInt]
+			if exit != nil {
+				// There's an exit but it's not a door
+				return fmt.Errorf("that's absurd.")
+			}
+		}
+	}
+
 	return fmt.Errorf("I see no %s here.", objectName)
 }
 

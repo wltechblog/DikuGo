@@ -296,6 +296,25 @@ Enhanced door finding to match original DikuMUD `find_door` and `isname` functio
 - **Direction Priority**: When direction specified, checks that specific exit first
 - **Fallback Logic**: Searches all exits when no direction given
 
+### 🏗️ **Door Flag Parsing Fix**
+Fixed the critical issue where door flags weren't being set properly during world loading:
+- **Before**: Raw door flags (0, 1, 2) were stored directly, not converted to EX_ISDOOR flags
+- **After**: Proper flag conversion following original DikuMUD logic:
+  - `0` = no door (no flags)
+  - `1` = door (EX_ISDOOR flag)
+  - `2` = pickproof door (EX_ISDOOR | EX_PICKPROOF flags)
+- **Implementation**: Fixed `pkg/storage/room_parser.go` to convert door flags correctly
+
+### 🔄 **Zone Reset Door Handling**
+Implemented the missing `resetDoor` function for proper door state management:
+- **Door State Control**: Handles zone reset 'D' commands to set door states
+- **State Options**:
+  - `0` = open (remove CLOSED and LOCKED flags)
+  - `1` = closed (set CLOSED, remove LOCKED)
+  - `2` = locked (set CLOSED and LOCKED flags)
+- **Two-Way Synchronization**: Automatically updates both sides of doors
+- **Implementation**: Added complete `resetDoor` function in `pkg/world/zone_reset.go`
+
 ## Benefits
 
 ### ✅ **Complete DikuMUD Compatibility**
