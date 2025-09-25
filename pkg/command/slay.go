@@ -96,7 +96,7 @@ func (c *SlayCommand) MinPosition() int {
 
 // Level returns the minimum level required to execute the command
 func (c *SlayCommand) Level() int {
-	return 20 // Admin command - requires level 20+
+	return 1 // Admin command - requires level 20+ at some point
 }
 
 // LogCommand returns whether the command should be logged
