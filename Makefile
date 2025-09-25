@@ -1,4 +1,25 @@
+# Declare phony targets to always run regardless of file timestamps
+.PHONY: all dikugo clean test
+
+# Default target
 all: dikugo
 
-dikugo: ./cmd/dikugo/main.go ./pkg/config/config.go ./pkg/world/combat_test.go ./pkg/world/combat.go ./pkg/world/character_death.go ./pkg/world/zone_reset.go ./pkg/world/character.go ./pkg/world/cityguard_test.go ./pkg/world/save.go ./pkg/world/cityguard_respawn_test.go ./pkg/world/time_weather.go ./pkg/world/zone_reset_test.go ./pkg/world/world.go ./pkg/world/mob_test.go ./pkg/world/corpse.go ./pkg/world/mob_equipment_test.go ./pkg/world/mob_respawn_test.go ./pkg/world/ai_integration_test.go ./pkg/world/ai_integration.go ./pkg/world/cityguard_load_test.go ./pkg/world/mock_storage.go ./pkg/world/zone_processor.go ./pkg/world/mobile_utils.go ./pkg/combat/combat.go ./pkg/combat/diku_combat.go ./pkg/game/game.go ./pkg/game/special_procs.go ./pkg/storage/mobile_parser_simple.go ./pkg/storage/zone_parser.go ./pkg/storage/mobile_parser.go ./pkg/storage/cityguard_test.go ./pkg/storage/shop_parser.go ./pkg/storage/file_storage.go ./pkg/storage/mobile_parser_detailed.go ./pkg/storage/storage.go ./pkg/storage/mob_attribute_test.go ./pkg/storage/object_parser.go ./pkg/storage/parser.go ./pkg/storage/object_parser_test.go ./pkg/storage/room_parser_test.go ./pkg/storage/mobile_parser_diku.go ./pkg/storage/custom_parser.go ./pkg/storage/player_storage.go ./pkg/storage/room_parser.go ./pkg/storage/mobile_parser_test.go ./pkg/utils/utils.go ./pkg/utils/dice.go ./pkg/network/client.go ./pkg/network/server.go ./pkg/network/client_registry.go ./pkg/network/client_interface.go ./pkg/ui/menu.go ./pkg/types/exit.go ./pkg/types/item.go ./pkg/types/constants.go ./pkg/types/types.go ./pkg/types/mob.go ./pkg/command/equipment_test.go ./pkg/command/remove_test.go ./pkg/command/validaterooms_test.go ./pkg/command/equipment.go ./pkg/command/quit.go ./pkg/command/wear.go ./pkg/command/get.go ./pkg/command/utils.go ./pkg/command/put.go ./pkg/command/look.go ./pkg/command/admin.go ./pkg/command/errors.go ./pkg/command/sell.go ./pkg/command/kill.go ./pkg/command/who.go ./pkg/command/movement.go ./pkg/command/list.go ./pkg/command/command.go ./pkg/command/remove.go ./pkg/command/inventory.go ./pkg/command/validaterooms.go ./pkg/command/reset_zone.go ./pkg/command/examine.go ./pkg/command/look_test.go ./pkg/command/kill_test.go ./pkg/command/say.go ./pkg/command/help.go ./pkg/command/buy.go ./pkg/command/drop.go ./pkg/command/wear_test.go ./pkg/command/mobstat.go ./pkg/command/testexits.go ./pkg/command/registry.go ./pkg/ai/behaviors.go ./pkg/ai/special_procs.go ./pkg/ai/manager_test.go ./pkg/ai/manager.go ./pkg/ai/mob_ai_test.go
+# Always compile clean - no file dependencies
+dikugo:
+	@echo "Building DikuGo (clean build)..."
+	go clean
 	go build -o dikugo cmd/dikugo/main.go
+	@echo "Build complete: dikugo"
+
+# Clean build artifacts
+clean:
+	@echo "Cleaning build artifacts..."
+	go clean
+	rm -f dikugo
+	@echo "Clean complete"
+
+# Run tests
+test:
+	@echo "Running tests..."
+	go test ./...
+	@echo "Tests complete"
