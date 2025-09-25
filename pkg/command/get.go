@@ -94,13 +94,36 @@ func (c *GetCommand) Execute(character *types.Character, args string) error {
 		removeObjectFromRoom(character.InRoom, obj)
 	}
 
-	// Add the object to the character's inventory
-	obj.InRoom = nil
-	obj.CarriedBy = character
-	character.Inventory = append(character.Inventory, obj)
+	// Handle money objects specially
+	if obj.Prototype.Type == types.ITEM_MONEY {
+		// Get the amount from the object's value
+		amount := obj.Prototype.Value[0]
+		if obj.Value[0] > 0 {
+			amount = obj.Value[0] // Use instance value if set
+		}
 
-	// Send a message to the character
-	return fmt.Errorf("you get %s.\r\n", obj.Prototype.ShortDesc)
+		if amount > 0 {
+			// Add gold to character
+			character.Gold += amount
+
+			// Send appropriate message
+			if amount == 1 {
+				return fmt.Errorf("There was 1 coin.\r\n")
+			} else {
+				return fmt.Errorf("There were %d coins.\r\n", amount)
+			}
+		} else {
+			return fmt.Errorf("you get %s.\r\n", obj.Prototype.ShortDesc)
+		}
+	} else {
+		// Handle regular objects - add to inventory
+		obj.InRoom = nil
+		obj.CarriedBy = character
+		character.Inventory = append(character.Inventory, obj)
+
+		// Send a message to the character
+		return fmt.Errorf("you get %s.\r\n", obj.Prototype.ShortDesc)
+	}
 }
 
 // getAll gets all objects from a container or room
@@ -154,7 +177,13 @@ func (c *GetCommand) getAll(character *types.Character, container string) error 
 
 	// Get each object
 	var sb strings.Builder
-	for _, obj := range objects {
+	totalGold := 0
+
+	// Create a copy of objects slice to avoid modification during iteration
+	objectsCopy := make([]*types.ObjectInstance, len(objects))
+	copy(objectsCopy, objects)
+
+	for _, obj := range objectsCopy {
 		// Check if the object can be picked up
 		if obj.Prototype.ExtraFlags&types.ITEM_NOPICK != 0 {
 			sb.WriteString(fmt.Sprintf("You can't pick up %s.\r\n", obj.Prototype.ShortDesc))
@@ -177,13 +206,38 @@ func (c *GetCommand) getAll(character *types.Character, container string) error 
 			removeObjectFromRoom(character.InRoom, obj)
 		}
 
-		// Add the object to the character's inventory
-		obj.InRoom = nil
-		obj.CarriedBy = character
-		character.Inventory = append(character.Inventory, obj)
+		// Handle money objects specially
+		if obj.Prototype.Type == types.ITEM_MONEY {
+			// Get the amount from the object's value
+			amount := obj.Prototype.Value[0]
+			if obj.Value[0] > 0 {
+				amount = obj.Value[0] // Use instance value if set
+			}
 
-		// Add a message to the buffer
-		sb.WriteString(fmt.Sprintf("You get %s.\r\n", obj.Prototype.ShortDesc))
+			if amount > 0 {
+				totalGold += amount
+			} else {
+				sb.WriteString(fmt.Sprintf("You get %s.\r\n", obj.Prototype.ShortDesc))
+			}
+		} else {
+			// Handle regular objects - add to inventory
+			obj.InRoom = nil
+			obj.CarriedBy = character
+			character.Inventory = append(character.Inventory, obj)
+
+			// Add a message to the buffer
+			sb.WriteString(fmt.Sprintf("You get %s.\r\n", obj.Prototype.ShortDesc))
+		}
+	}
+
+	// Add total gold and display message if any was collected
+	if totalGold > 0 {
+		character.Gold += totalGold
+		if totalGold == 1 {
+			sb.WriteString("There was 1 coin.\r\n")
+		} else {
+			sb.WriteString(fmt.Sprintf("There were %d coins.\r\n", totalGold))
+		}
 	}
 
 	// Send the messages to the character

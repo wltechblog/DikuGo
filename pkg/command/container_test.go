@@ -126,6 +126,7 @@ func TestGetFromCorpse(t *testing.T) {
 			Name:      "gold",
 			ShortDesc: "some gold coins",
 			Type:      types.ITEM_MONEY,
+			Value:     [4]int{100, 0, 0, 0}, // 100 gold coins
 		},
 		InObj: corpse,
 	}
@@ -143,15 +144,22 @@ func TestGetFromCorpse(t *testing.T) {
 	corpse.Contains = append(corpse.Contains, dagger)
 
 	// Test getting gold from corpse
+	initialGold := character.Gold
 	getCmd := &GetCommand{}
 	err := getCmd.Execute(character, "gold from corpse")
-	if err == nil || !strings.Contains(err.Error(), "you get") {
-		t.Errorf("Expected success message containing 'you get', got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "There were") {
+		t.Errorf("Expected success message containing 'There were', got: %v", err)
 	}
 
-	// Check that gold is now in inventory
-	if len(character.Inventory) != 1 {
-		t.Errorf("Expected 1 item in inventory, got: %d", len(character.Inventory))
+	// Check that gold was added to character's gold, not inventory
+	expectedGold := initialGold + 100
+	if character.Gold != expectedGold {
+		t.Errorf("Expected gold to be %d, got: %d", expectedGold, character.Gold)
+	}
+
+	// Check that gold object is NOT in inventory (should be converted to currency)
+	if len(character.Inventory) != 0 {
+		t.Errorf("Expected 0 items in inventory after getting gold, got: %d", len(character.Inventory))
 	}
 
 	// Test getting dagger from corpse
@@ -161,8 +169,8 @@ func TestGetFromCorpse(t *testing.T) {
 	}
 
 	// Check that both items are now in inventory
-	if len(character.Inventory) != 2 {
-		t.Errorf("Expected 2 items in inventory, got: %d", len(character.Inventory))
+	if len(character.Inventory) != 1 {
+		t.Errorf("Expected 1 item in inventory (dagger only), got: %d", len(character.Inventory))
 	}
 
 	// Check that corpse is now empty
@@ -230,5 +238,168 @@ func TestGetFromClosedContainer(t *testing.T) {
 	// Check that character inventory is empty
 	if len(character.Inventory) != 0 {
 		t.Errorf("Expected 0 items in inventory, got: %d", len(character.Inventory))
+	}
+}
+
+func TestGetAllFromContainerWithGold(t *testing.T) {
+	// Create a test character
+	character := &types.Character{
+		Name:      "TestPlayer",
+		Gold:      50,
+		Inventory: make([]*types.ObjectInstance, 0),
+	}
+
+	// Create a test room
+	room := &types.Room{
+		VNUM:    1001,
+		Name:    "Test Room",
+		Objects: make([]*types.ObjectInstance, 0),
+	}
+	character.InRoom = room
+
+	// Create a corpse container
+	corpse := &types.ObjectInstance{
+		Prototype: &types.Object{
+			VNUM:      2001,
+			Name:      "corpse",
+			ShortDesc: "a corpse",
+			Type:      types.ITEM_CONTAINER,
+		},
+		Contains: make([]*types.ObjectInstance, 0),
+	}
+	room.Objects = append(room.Objects, corpse)
+
+	// Add gold coins to the corpse
+	gold1 := &types.ObjectInstance{
+		Prototype: &types.Object{
+			VNUM:      -2,
+			Name:      "coins gold",
+			ShortDesc: "50 gold coins",
+			Type:      types.ITEM_MONEY,
+			Value:     [4]int{50, 0, 0, 0},
+		},
+		InObj: corpse,
+	}
+	corpse.Contains = append(corpse.Contains, gold1)
+
+	// Add more gold coins to the corpse
+	gold2 := &types.ObjectInstance{
+		Prototype: &types.Object{
+			VNUM:      -2,
+			Name:      "coins gold",
+			ShortDesc: "25 gold coins",
+			Type:      types.ITEM_MONEY,
+			Value:     [4]int{25, 0, 0, 0},
+		},
+		InObj: corpse,
+	}
+	corpse.Contains = append(corpse.Contains, gold2)
+
+	// Add a sword to the corpse
+	sword := &types.ObjectInstance{
+		Prototype: &types.Object{
+			VNUM:      2003,
+			Name:      "sword",
+			ShortDesc: "a steel sword",
+			Type:      types.ITEM_WEAPON,
+		},
+		InObj: corpse,
+	}
+	corpse.Contains = append(corpse.Contains, sword)
+
+	// Add a potion to the corpse
+	potion := &types.ObjectInstance{
+		Prototype: &types.Object{
+			VNUM:      2004,
+			Name:      "potion",
+			ShortDesc: "a healing potion",
+			Type:      types.ITEM_POTION,
+		},
+		InObj: corpse,
+	}
+	corpse.Contains = append(corpse.Contains, potion)
+
+	// Test getting all items from corpse
+	initialGold := character.Gold
+	getCmd := &GetCommand{}
+	err := getCmd.Execute(character, "all from corpse")
+	if err == nil {
+		t.Errorf("Expected success message, got: %v", err)
+	}
+
+	// Check that gold was added to character's gold (50 + 25 = 75)
+	expectedGold := initialGold + 75
+	if character.Gold != expectedGold {
+		t.Errorf("Expected gold to be %d, got: %d", expectedGold, character.Gold)
+	}
+
+	// Check that only regular items are in inventory (sword and potion)
+	if len(character.Inventory) != 2 {
+		t.Errorf("Expected 2 items in inventory (sword and potion), got: %d", len(character.Inventory))
+	}
+
+	// Verify the message contains both gold and item information
+	message := err.Error()
+	if !strings.Contains(message, "There were 75 coins") {
+		t.Errorf("Expected message to contain 'There were 75 coins', got: %s", message)
+	}
+	if !strings.Contains(message, "You get a steel sword") {
+		t.Errorf("Expected message to contain 'You get a steel sword', got: %s", message)
+	}
+	if !strings.Contains(message, "You get a healing potion") {
+		t.Errorf("Expected message to contain 'You get a healing potion', got: %s", message)
+	}
+}
+
+func TestGetSingleGoldCoin(t *testing.T) {
+	// Create a test character
+	character := &types.Character{
+		Name:      "TestPlayer",
+		Gold:      10,
+		Inventory: make([]*types.ObjectInstance, 0),
+	}
+
+	// Create a test room
+	room := &types.Room{
+		VNUM:    1001,
+		Name:    "Test Room",
+		Objects: make([]*types.ObjectInstance, 0),
+	}
+	character.InRoom = room
+
+	// Create a single gold coin on the ground
+	goldCoin := &types.ObjectInstance{
+		Prototype: &types.Object{
+			VNUM:      -2,
+			Name:      "coin gold",
+			ShortDesc: "a gold coin",
+			Type:      types.ITEM_MONEY,
+			Value:     [4]int{1, 0, 0, 0}, // 1 gold coin
+		},
+	}
+	room.Objects = append(room.Objects, goldCoin)
+
+	// Test getting the single gold coin
+	initialGold := character.Gold
+	getCmd := &GetCommand{}
+	err := getCmd.Execute(character, "coin")
+	if err == nil || !strings.Contains(err.Error(), "There was 1 coin") {
+		t.Errorf("Expected success message containing 'There was 1 coin', got: %v", err)
+	}
+
+	// Check that gold was added to character's gold
+	expectedGold := initialGold + 1
+	if character.Gold != expectedGold {
+		t.Errorf("Expected gold to be %d, got: %d", expectedGold, character.Gold)
+	}
+
+	// Check that gold coin is NOT in inventory
+	if len(character.Inventory) != 0 {
+		t.Errorf("Expected 0 items in inventory after getting gold coin, got: %d", len(character.Inventory))
+	}
+
+	// Check that gold coin is no longer in room
+	if len(room.Objects) != 0 {
+		t.Errorf("Expected 0 objects in room after getting gold coin, got: %d", len(room.Objects))
 	}
 }
