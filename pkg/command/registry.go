@@ -37,6 +37,8 @@ func InitRegistry(w *world.World, combatManager CombatManagerInterface) *Registr
 	registry.Register(&EatCommand{})
 	registry.Register(&SipCommand{})
 	registry.Register(&TasteCommand{})
+	registry.Register(&OpenCommand{})
+	registry.Register(&CloseCommand{})
 	registry.Register(&ReciteCommand{World: w})
 	registry.Register(&UseCommand{World: w})
 
