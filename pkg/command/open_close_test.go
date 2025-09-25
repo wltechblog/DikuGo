@@ -834,3 +834,183 @@ func TestOpenCommand_DoorFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenCommand_ErrorMessages(t *testing.T) {
+	// Create a test character
+	character := &types.Character{
+		Name:     "TestPlayer",
+		Level:    5,
+		Position: types.POS_STANDING,
+	}
+
+	// Create a test room with specific door setup
+	room := &types.Room{
+		VNUM:       1001,
+		Name:       "Test Room",
+		Characters: []*types.Character{character},
+		Exits:      [6]*types.Exit{},
+	}
+	character.InRoom = room
+
+	// Create a gate to the north
+	room.Exits[types.DIR_NORTH] = &types.Exit{
+		Direction:   types.DIR_NORTH,
+		Description: "A large gate leads north.",
+		Keywords:    "gate large",
+		Flags:       types.EX_ISDOOR | types.EX_CLOSED,
+		Key:         -1,
+		DestVnum:    1002,
+	}
+
+	// Create a regular exit (no door) to the east
+	room.Exits[types.DIR_EAST] = &types.Exit{
+		Direction:   types.DIR_EAST,
+		Description: "A path leads east.",
+		Keywords:    "",
+		Flags:       0, // No door flags
+		Key:         -1,
+		DestVnum:    1003,
+	}
+
+	testCases := []struct {
+		name        string
+		command     string
+		expectError string
+	}{
+		{
+			name:        "Wrong keyword with direction",
+			command:     "grate north",
+			expectError: "I see no grate there.",
+		},
+		{
+			name:        "No exit in direction",
+			command:     "door south",
+			expectError: "I really don't see how you can close anything there.",
+		},
+		{
+			name:        "Invalid direction",
+			command:     "door northeast",
+			expectError: "that's not a direction.",
+		},
+		{
+			name:        "Wrong keyword without direction",
+			command:     "grate",
+			expectError: "I see no grate here.",
+		},
+		{
+			name:        "Correct keyword with direction",
+			command:     "gate north",
+			expectError: "", // Should succeed
+		},
+		{
+			name:        "Correct keyword without direction",
+			command:     "gate",
+			expectError: "", // Should succeed
+		},
+	}
+
+	for i, tc := range testCases {
+		// Reset door to closed state for each test
+		if room.Exits[types.DIR_NORTH] != nil {
+			room.Exits[types.DIR_NORTH].Flags |= types.EX_CLOSED
+		}
+
+		openCmd := &OpenCommand{}
+		err := openCmd.Execute(character, tc.command)
+
+		if tc.expectError == "" {
+			if err != nil {
+				t.Errorf("Test case %d (%s): Expected no error, got: %v", i, tc.name, err)
+			}
+		} else {
+			if err == nil || !strings.Contains(err.Error(), tc.expectError) {
+				t.Errorf("Test case %d (%s): Expected error containing '%s', got: %v", i, tc.name, tc.expectError, err)
+			}
+		}
+	}
+}
+
+func TestCloseCommand_ErrorMessages(t *testing.T) {
+	// Create a test character
+	character := &types.Character{
+		Name:     "TestPlayer",
+		Level:    5,
+		Position: types.POS_STANDING,
+	}
+
+	// Create a test room with specific door setup
+	room := &types.Room{
+		VNUM:       1001,
+		Name:       "Test Room",
+		Characters: []*types.Character{character},
+		Exits:      [6]*types.Exit{},
+	}
+	character.InRoom = room
+
+	// Create a gate to the north (open)
+	room.Exits[types.DIR_NORTH] = &types.Exit{
+		Direction:   types.DIR_NORTH,
+		Description: "A large gate leads north.",
+		Keywords:    "gate large",
+		Flags:       types.EX_ISDOOR, // Open door
+		Key:         -1,
+		DestVnum:    1002,
+	}
+
+	testCases := []struct {
+		name        string
+		command     string
+		expectError string
+	}{
+		{
+			name:        "Wrong keyword with direction",
+			command:     "grate north",
+			expectError: "I see no grate there.",
+		},
+		{
+			name:        "No exit in direction",
+			command:     "door south",
+			expectError: "I really don't see how you can close anything there.",
+		},
+		{
+			name:        "Invalid direction",
+			command:     "door northeast",
+			expectError: "that's not a direction.",
+		},
+		{
+			name:        "Wrong keyword without direction",
+			command:     "grate",
+			expectError: "I see no grate here.",
+		},
+		{
+			name:        "Correct keyword with direction",
+			command:     "gate north",
+			expectError: "", // Should succeed
+		},
+		{
+			name:        "Correct keyword without direction",
+			command:     "gate",
+			expectError: "", // Should succeed
+		},
+	}
+
+	for i, tc := range testCases {
+		// Reset door to open state for each test
+		if room.Exits[types.DIR_NORTH] != nil {
+			room.Exits[types.DIR_NORTH].Flags &^= types.EX_CLOSED
+		}
+
+		closeCmd := &CloseCommand{}
+		err := closeCmd.Execute(character, tc.command)
+
+		if tc.expectError == "" {
+			if err != nil {
+				t.Errorf("Test case %d (%s): Expected no error, got: %v", i, tc.name, err)
+			}
+		} else {
+			if err == nil || !strings.Contains(err.Error(), tc.expectError) {
+				t.Errorf("Test case %d (%s): Expected error containing '%s', got: %v", i, tc.name, tc.expectError, err)
+			}
+		}
+	}
+}

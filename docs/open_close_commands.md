@@ -274,6 +274,36 @@ I see no nonexistent here.
 Open what?
 ```
 
+### Enhanced Door Error Messages
+```
+> open grate north
+I see no grate there.
+(North has a "gate", not a "grate")
+
+> open door south
+I really don't see how you can close anything there.
+(No exit to the south)
+
+> open door northeast
+that's not a direction.
+(Invalid direction)
+
+> open grate
+I see no grate here.
+(No exits have "grate" keyword)
+```
+
+### Complex Arguments with Fill Words
+```
+> open the gate west
+Ok.
+(Ignores "the", focuses on "gate" and "west")
+
+> close a door to the north
+Ok.
+(Ignores "a", "to", "the", focuses on "door" and "north")
+```
+
 ## Key Fixes Applied
 
 ### 🔧 **Exit Visibility Fix**
@@ -315,6 +345,14 @@ Implemented the missing `resetDoor` function for proper door state management:
 - **Two-Way Synchronization**: Automatically updates both sides of doors
 - **Implementation**: Added complete `resetDoor` function in `pkg/world/zone_reset.go`
 
+### 🎯 **Enhanced Error Handling**
+Implemented precise error messages following original DikuMUD `find_door` logic:
+- **Invalid Direction**: "that's not a direction." (e.g., "open door northeast")
+- **No Exit**: "I really don't see how you can close anything there." (e.g., "open door south" when no south exit)
+- **Wrong Keyword with Direction**: "I see no [keyword] there." (e.g., "open grate north" when north has a "gate")
+- **Wrong Keyword without Direction**: "I see no [keyword] here." (e.g., "open grate" when no exits have "grate" keyword)
+- **Complex Arguments**: Supports "open door west", "close gate north", etc. with proper keyword matching
+
 ## Benefits
 
 ### ✅ **Complete DikuMUD Compatibility**
@@ -336,10 +374,11 @@ Implemented the missing `resetDoor` function for proper door state management:
 - Handles complex argument formats
 
 ### ✅ **Thorough Testing**
-- 19+ unit tests covering all scenarios
+- 23+ unit tests covering all scenarios
 - Container and door functionality verified
 - Edge cases and error conditions tested
 - Argument parsing and keyword matching validated
+- Comprehensive error message testing
 
 ### ✅ **Clean Integration**
 - Uses existing type system and constants

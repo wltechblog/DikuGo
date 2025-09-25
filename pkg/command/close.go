@@ -12,8 +12,10 @@ type CloseCommand struct{}
 
 // Execute executes the close command
 func (c *CloseCommand) Execute(character *types.Character, args string) error {
-	// Check if there are arguments
-	if args == "" {
+	// Parse arguments using DikuMUD's argument_interpreter logic
+	objectName, direction := c.argumentInterpreter(args)
+
+	if objectName == "" {
 		return fmt.Errorf("close what?")
 	}
 
@@ -29,28 +31,17 @@ func (c *CloseCommand) Execute(character *types.Character, args string) error {
 		return c.closeContainer(character, targetObject)
 	}
 
-	// Parse arguments using DikuMUD's argument_interpreter logic for door finding
-	// This splits the argument into two parts: object/door name and direction
-	objectName, direction := c.argumentInterpreter(args)
+	// If no object found, try to find a door/exit using find_door logic
+	exitDir, err := c.findDoorWithErrors(character, objectName, direction)
+	if err != nil {
+		return err // Return the specific error from findDoorWithErrors
+	}
 
-	// If no object found, try to find a door/exit
-	exitDir := c.findDoor(character, objectName, direction)
 	if exitDir >= 0 {
 		return c.closeDoor(character, exitDir)
 	}
 
-	// Nothing found - check if there's an exit in that direction but it's not a door
-	if direction != "" {
-		dirInt := c.parseDirection(direction)
-		if dirInt >= 0 && dirInt < 6 {
-			exit := character.InRoom.Exits[dirInt]
-			if exit != nil {
-				// There's an exit but it's not a door
-				return fmt.Errorf("that's absurd.")
-			}
-		}
-	}
-
+	// This should not be reached due to findDoorWithErrors handling all cases
 	return fmt.Errorf("I see no %s here.", objectName)
 }
 
@@ -133,46 +124,48 @@ func (c *CloseCommand) matchesName(obj *types.ObjectInstance, name string) bool 
 		strings.Contains(strings.ToLower(obj.Prototype.ShortDesc), name)
 }
 
-// findDoor looks for a door/exit by name and optional direction (following original DikuMUD logic)
-func (c *CloseCommand) findDoor(character *types.Character, doorName string, direction string) int {
-	// If a direction was specified, check that specific exit
+// findDoorWithErrors looks for a door/exit following original DikuMUD find_door logic with proper error messages
+func (c *CloseCommand) findDoorWithErrors(character *types.Character, doorName string, direction string) (int, error) {
 	if direction != "" {
+		// A direction was specified
 		exitDir := c.parseDirection(direction)
-		if exitDir < 0 || exitDir >= 6 {
-			// Invalid direction
-			return -1
+		if exitDir < 0 {
+			return -1, fmt.Errorf("that's not a direction.")
 		}
 
 		exit := character.InRoom.Exits[exitDir]
-		if exit == nil {
-			// No exit in that direction
-			return -1
-		}
-
-		// If the exit has keywords, check if doorName matches
-		if exit.Keywords != "" {
-			if c.isName(doorName, exit.Keywords) {
-				return exitDir
+		if exit != nil {
+			if exit.Keywords != "" {
+				if c.isName(doorName, exit.Keywords) {
+					return exitDir, nil
+				} else {
+					return -1, fmt.Errorf("I see no %s there.", doorName)
+				}
+			} else {
+				// No keywords, so any door name matches this exit
+				return exitDir, nil
 			}
-			// Door exists but name doesn't match
-			return -1
 		} else {
-			// No keywords, so any door name matches this exit
-			return exitDir
+			return -1, fmt.Errorf("I really don't see how you can close anything there.")
 		}
-	}
-
-	// No direction specified, search all exits for matching keyword
-	for dir := 0; dir < 6; dir++ {
-		exit := character.InRoom.Exits[dir]
-		if exit != nil && exit.Keywords != "" {
-			if c.isName(doorName, exit.Keywords) {
-				return dir
+	} else {
+		// Try to locate the keyword in any direction
+		for dir := 0; dir < 6; dir++ {
+			exit := character.InRoom.Exits[dir]
+			if exit != nil && exit.Keywords != "" {
+				if c.isName(doorName, exit.Keywords) {
+					return dir, nil
+				}
 			}
 		}
+		return -1, fmt.Errorf("I see no %s here.", doorName)
 	}
+}
 
-	return -1
+// findDoor looks for a door/exit by name and optional direction (legacy function for compatibility)
+func (c *CloseCommand) findDoor(character *types.Character, doorName string, direction string) int {
+	exitDir, _ := c.findDoorWithErrors(character, doorName, direction)
+	return exitDir
 }
 
 // isName checks if a name matches any of the keywords (following original DikuMUD isname function)
