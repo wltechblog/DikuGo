@@ -47,6 +47,7 @@ func InitRegistry(w *world.World, combatManager CombatManagerInterface) *Registr
 	registry.Register(&CheckMobsCommand{})
 	registry.Register(&ExamineMobCommand{})
 	registry.Register(&TestMobParserCommand{})
+	registry.Register(&SlayCommand{CombatManager: combatManager})
 
 	// Register combat skill commands
 	registry.Register(&BashCommand{CombatManager: combatManager})
