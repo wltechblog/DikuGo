@@ -55,7 +55,7 @@ func TestWearCommand(t *testing.T) {
 		t.Errorf("Expected an error (which contains the success message), got nil")
 	} else {
 		// The error should contain a success message
-		if !strings.Contains(err.Error(), "you wear a long sword") {
+		if !strings.Contains(err.Error(), "You wear a long sword") {
 			t.Errorf("Expected error to contain success message, got: %s", err.Error())
 		}
 	}
@@ -78,7 +78,7 @@ func TestWearCommand(t *testing.T) {
 		t.Errorf("Expected an error (which contains the success message), got nil")
 	} else {
 		// The error should contain a success message
-		if !strings.Contains(err.Error(), "you wear a wooden shield") {
+		if !strings.Contains(err.Error(), "You start using a wooden shield") {
 			t.Errorf("Expected error to contain success message, got: %s", err.Error())
 		}
 	}

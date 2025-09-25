@@ -21,6 +21,8 @@ func InitRegistry(w *world.World, combatManager CombatManagerInterface) *Registr
 	registry.Register(&ExamineCommand{})
 	registry.Register(&InventoryCommand{})
 	registry.Register(&WearCommand{})
+	registry.Register(&WieldCommand{})
+	registry.Register(&HoldCommand{})
 	registry.Register(&RemoveCommand{})
 	registry.Register(&EquipmentCommand{})
 	registry.Register(&ListCommand{})

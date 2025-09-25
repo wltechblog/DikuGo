@@ -38,8 +38,8 @@ func (c *WearCommand) Execute(character *types.Character, args string) error {
 		return fmt.Errorf("you are not the right class to use %s", obj.Prototype.ShortDesc)
 	}
 
-	// Find a position to wear the object
-	position := findWearPosition(obj.Prototype.WearFlags)
+	// Find a position to wear the object (with multiple position support)
+	position := findBestWearPosition(character, obj.Prototype.WearFlags)
 	if position < 0 {
 		return fmt.Errorf("you can't wear %s", obj.Prototype.ShortDesc)
 	}
@@ -81,8 +81,8 @@ func (c *WearCommand) Execute(character *types.Character, args string) error {
 		}
 	}
 
-	// Send a message to the character
-	return fmt.Errorf("you wear %s on your %s.\r\n", obj.Prototype.ShortDesc, wearPositionName(position))
+	// Send a message to the character with position-specific messages
+	return fmt.Errorf("%s", getWearMessage(obj, position))
 }
 
 // wearAll wears all wearable objects in the character's inventory
@@ -105,8 +105,8 @@ func (c *WearCommand) wearAll(character *types.Character) error {
 			continue
 		}
 
-		// Find a position to wear the object
-		position := findWearPosition(obj.Prototype.WearFlags)
+		// Find a position to wear the object (with multiple position support)
+		position := findBestWearPosition(character, obj.Prototype.WearFlags)
 		if position < 0 {
 			continue
 		}
@@ -150,7 +150,7 @@ func (c *WearCommand) wearAll(character *types.Character) error {
 		}
 
 		// Add a message to the buffer
-		sb.WriteString(fmt.Sprintf("You wear %s on your %s.\r\n", obj.Prototype.ShortDesc, wearPositionName(position)))
+		sb.WriteString(getWearMessage(obj, position))
 	}
 
 	// If nothing was worn, return a message
@@ -185,6 +185,80 @@ func (c *WearCommand) Level() int {
 // LogCommand returns whether the command should be logged
 func (c *WearCommand) LogCommand() bool {
 	return false
+}
+
+// findBestWearPosition finds the best available wear position for the given wear flags
+// This function handles multiple positions for fingers and wrists like the original DikuMUD
+func findBestWearPosition(character *types.Character, wearFlags uint32) int {
+	// Check each wear flag in priority order, handling multiple positions
+	if wearFlags&types.ITEM_WEAR_FINGER != 0 {
+		// Try left finger first, then right finger
+		if character.Equipment[types.WEAR_FINGER_L] == nil {
+			return types.WEAR_FINGER_L
+		}
+		if character.Equipment[types.WEAR_FINGER_R] == nil {
+			return types.WEAR_FINGER_R
+		}
+		return -1 // Both fingers occupied
+	}
+	if wearFlags&types.ITEM_WEAR_NECK != 0 {
+		// Try first neck position, then second
+		if character.Equipment[types.WEAR_NECK_1] == nil {
+			return types.WEAR_NECK_1
+		}
+		if character.Equipment[types.WEAR_NECK_2] == nil {
+			return types.WEAR_NECK_2
+		}
+		return -1 // Both neck positions occupied
+	}
+	if wearFlags&types.ITEM_WEAR_WRIST != 0 {
+		// Try left wrist first, then right wrist
+		if character.Equipment[types.WEAR_WRIST_L] == nil {
+			return types.WEAR_WRIST_L
+		}
+		if character.Equipment[types.WEAR_WRIST_R] == nil {
+			return types.WEAR_WRIST_R
+		}
+		return -1 // Both wrists occupied
+	}
+
+	// Single position items
+	if wearFlags&types.ITEM_WEAR_BODY != 0 && character.Equipment[types.WEAR_BODY] == nil {
+		return types.WEAR_BODY
+	}
+	if wearFlags&types.ITEM_WEAR_HEAD != 0 && character.Equipment[types.WEAR_HEAD] == nil {
+		return types.WEAR_HEAD
+	}
+	if wearFlags&types.ITEM_WEAR_LEGS != 0 && character.Equipment[types.WEAR_LEGS] == nil {
+		return types.WEAR_LEGS
+	}
+	if wearFlags&types.ITEM_WEAR_FEET != 0 && character.Equipment[types.WEAR_FEET] == nil {
+		return types.WEAR_FEET
+	}
+	if wearFlags&types.ITEM_WEAR_HANDS != 0 && character.Equipment[types.WEAR_HANDS] == nil {
+		return types.WEAR_HANDS
+	}
+	if wearFlags&types.ITEM_WEAR_ARMS != 0 && character.Equipment[types.WEAR_ARMS] == nil {
+		return types.WEAR_ARMS
+	}
+	if wearFlags&types.ITEM_WEAR_SHIELD != 0 && character.Equipment[types.WEAR_SHIELD] == nil {
+		return types.WEAR_SHIELD
+	}
+	if wearFlags&types.ITEM_WEAR_ABOUT != 0 && character.Equipment[types.WEAR_ABOUT] == nil {
+		return types.WEAR_ABOUT
+	}
+	if wearFlags&types.ITEM_WEAR_WAIST != 0 && character.Equipment[types.WEAR_WAIST] == nil {
+		return types.WEAR_WAIST
+	}
+	if wearFlags&types.ITEM_WEAR_WIELD != 0 && character.Equipment[types.WEAR_WIELD] == nil {
+		return types.WEAR_WIELD
+	}
+	if wearFlags&types.ITEM_WEAR_HOLD != 0 && character.Equipment[types.WEAR_HOLD] == nil {
+		return types.WEAR_HOLD
+	}
+
+	// No valid position found
+	return -1
 }
 
 // findWearPosition finds a position to wear an object
@@ -246,6 +320,26 @@ func canWearItem(character *types.Character, obj *types.Object) bool {
 
 	// Use the CanClassUseItem function from the types package
 	return types.CanClassUseItem(character.Class, obj)
+}
+
+// getWearMessage returns the appropriate wear message based on position
+func getWearMessage(obj *types.ObjectInstance, position int) string {
+	switch position {
+	case types.WEAR_FINGER_L:
+		return fmt.Sprintf("You put %s on your left finger.\r\n", obj.Prototype.ShortDesc)
+	case types.WEAR_FINGER_R:
+		return fmt.Sprintf("You put %s on your right finger.\r\n", obj.Prototype.ShortDesc)
+	case types.WEAR_WRIST_L:
+		return fmt.Sprintf("You wear %s around your left wrist.\r\n", obj.Prototype.ShortDesc)
+	case types.WEAR_WRIST_R:
+		return fmt.Sprintf("You wear %s around your right wrist.\r\n", obj.Prototype.ShortDesc)
+	case types.WEAR_NECK_1, types.WEAR_NECK_2:
+		return fmt.Sprintf("Ok.\r\n")
+	case types.WEAR_SHIELD:
+		return fmt.Sprintf("You start using %s.\r\n", obj.Prototype.ShortDesc)
+	default:
+		return fmt.Sprintf("You wear %s on your %s.\r\n", obj.Prototype.ShortDesc, wearPositionName(position))
+	}
 }
 
 // wearPositionName returns the name of a wear position
